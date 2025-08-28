@@ -1,0 +1,434 @@
+{
+  "info": {
+    "_postman_id": "gemini-chatbot-collection-2025",
+    "name": "Gemini Caching Chatbot API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Postman collection for all Gemini Caching Chatbot API endpoints."
+  },
+  "item": [
+    {
+      "name": "Create Cache",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"companyProfile\": \"<PASTE COMPANY PROFILE TEXT HERE>\",\n  \"systemInstruction\": \"You are IT Path Solutions' AI assistant. Answer questions about the company using only the cached profile information.\"\n}"
+        },
+        "url": {
+          "raw": "http://localhost:3000/api/create-cache",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "3000",
+          "path": ["api", "create-cache"]
+        }
+      }
+    },
+    {
+      "name": "Ask Question",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"question\": \"What are the recent blog posts from IT Path Solutions?\",\n  \"useStreaming\": false\n}"
+        },
+        "url": {
+          "raw": "http://localhost:3000/api/ask",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "3000",
+          "path": ["api", "ask"]
+        }
+      }
+    },
+    {
+      "name": "Start Chat",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"initialMessage\": \"Hello, tell me about IT Path Solutions.\"\n}"
+        },
+        "url": {
+          "raw": "http://localhost:3000/api/start-chat",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "3000",
+          "path": ["api", "start-chat"]
+        }
+      }
+    },
+    {
+      "name": "List Caches",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "http://localhost:3000/api/caches",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "3000",
+          "path": ["api", "caches"]
+        }
+      }
+    },
+    {
+      "name": "Update Cache TTL",
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"ttl\": \"7200s\"\n}"
+        },
+        "url": {
+          "raw": "http://localhost:3000/api/cache/ttl",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "3000",
+          "path": ["api", "cache", "ttl"]
+        }
+      }
+    },
+    {
+      "name": "Delete Cache",
+      "request": {
+        "method": "DELETE",
+        "url": {
+          "raw": "http://localhost:3000/api/cache",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "3000",
+          "path": ["api", "cache"]
+        }
+      }
+    },
+    {
+      "name": "Token Analysis",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "http://localhost:3000/api/token-analysis",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "3000",
+          "path": ["api", "token-analysis"]
+        }
+      }
+    },
+    {
+      "name": "Conversation History",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "http://localhost:3000/api/history",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "3000",
+          "path": ["api", "history"]
+        }
+      }
+    },
+    {
+      "name": "Reset Conversation",
+      "request": {
+        "method": "POST",
+        "url": {
+          "raw": "http://localhost:3000/api/reset",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "3000",
+          "path": ["api", "reset"]
+        }
+      }
+    },
+    {
+      "name": "Upload Profile (file)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "multipart/form-data" }
+        ],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "profileFile",
+              "type": "file",
+              "src": "<SELECT FILE>"
+            },
+            {
+              "key": "systemInstruction",
+              "type": "text",
+              "value": "You are IT Path Solutions' AI assistant. Answer questions about the company using only the cached profile information."
+            }
+          ]
+        },
+        "url": {
+          "raw": "http://localhost:3000/api/create-cache",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "3000",
+          "path": ["api", "create-cache"]
+        }
+      }
+    },
+    {
+      "name": "Create Summary Cache",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"summaryText\": \"IT Path Solutions: leading IT services provider; core services: web & app dev, cloud migration, QA; global offices in India, UK, US; key values: trust, quality, timeliness.\",\n  \"systemInstruction\": \"Answer using only this cached summary.\"\n}"
+        },
+        "url": {
+          "raw": "http://localhost:3000/api/create-summary-cache",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "3000",
+          "path": ["api", "create-summary-cache"]
+        }
+      }
+    },
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "http://localhost:3000/health",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "3000",
+          "path": ["health"]
+        }
+      }
+    },
+    {
+      "name": "ULTRA-OPTIMIZED TOKEN ENDPOINTS",
+      "item": [
+        {
+          "name": "Setup Ultra-Optimized Caches (File Upload)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "profileFile",
+                  "type": "file",
+                  "src": [],
+                  "description": "Upload PDF or TXT file with company profile"
+                }
+              ]
+            },
+            "url": {
+              "raw": "http://localhost:3000/api/optimize/setup-file",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3000",
+              "path": ["api", "optimize", "setup-file"]
+            },
+            "description": "Upload PDF/TXT file and create optimized cache. Automatically expands content to meet 4096+ token requirement."
+          }
+        },
+        {
+          "name": "Setup Ultra-Optimized Caches (Text Input)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"profile\": \"Corporate Profile\\n\\nAbout Us\\nClient satisfaction is one of the main aspects of our company. We always try to improve our process efficiency and effectiveness according to our clients feedback.\\n\\nWhat distinctly separates our company from other is not the healthy bottom lines, but a strong quality-oriented corporate culture which is shared by each & every member of our company.\\n\\nWe believe in completing every project on time without affecting the project quality. And for that, we set the things right with our intuitive way of working and maintaining all the quality standards.\\n\\nWe are result-oriented we set the result driven goals which make us more focused on what we do. To achieve that goal, we follow three basic principles which are (1). Trust, (2). Respect and (3). credibility.\\n\\nWe offer a friendly and flexible approach which ensures long-term partnerships with our clients. Client & Employee satisfaction is what we want in IT PATH SOLUTIONS!...\\n\\nWe are a LEADING IT SERVICES PROVIDER! IT Path Solutions excels at delivering top of the line services to clients when it comes to web development, open source customization, custom software development, mobile application development etc.\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:3000/api/optimize/setup",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3000",
+              "path": ["api", "optimize", "setup"]
+            },
+            "description": "Create optimized cache with text input. Automatically expands content to meet 4096+ token minimum for Gemini API."
+          }
+        },
+        {
+          "name": "Ask Optimized Question",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question\": \"What services does the company offer?\",\n  \"maxTokens\": 50\n}"
+            },
+            "url": {
+              "raw": "http://localhost:3000/api/optimize/ask",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3000",
+              "path": ["api", "optimize", "ask"]
+            },
+            "description": "Ultra-optimized Q&A using facts-first routing and micro-caches. Answers simple questions from structured facts (0 API tokens)."
+          }
+        },
+        {
+          "name": "Get Optimization Analytics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:3000/api/optimize/analytics",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3000",
+              "path": ["api", "optimize", "analytics"]
+            },
+            "description": "Detailed token usage analytics showing savings calculations, cache breakdown, and optimization metrics."
+          }
+        },
+        {
+          "name": "Reset Optimization Stats",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:3000/api/optimize/reset",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3000",
+              "path": ["api", "optimize", "reset"]
+            },
+            "description": "Reset token usage statistics for fresh analytics tracking."
+          }
+        }
+      ],
+      "description": "Ultra-optimized endpoints for minimal token usage with 80-95% savings"
+    },
+    {
+      "name": "OPTIMIZATION TEST SCENARIOS",
+      "item": [
+        {
+          "name": "Simple Facts Question (0 tokens)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question\": \"Where are the company offices located?\",\n  \"maxTokens\": 30\n}"
+            },
+            "url": {
+              "raw": "http://localhost:3000/api/optimize/ask",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3000",
+              "path": ["api", "optimize", "ask"]
+            },
+            "description": "Should be answered from compact facts (no API call, 0 tokens). Test facts-first routing."
+          }
+        },
+        {
+          "name": "Technology Question (micro-cache)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question\": \"What technologies does the company use?\",\n  \"maxTokens\": 50\n}"
+            },
+            "url": {
+              "raw": "http://localhost:3000/api/optimize/ask",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3000",
+              "path": ["api", "optimize", "ask"]
+            },
+            "description": "Uses technology micro-cache (~200 tokens) instead of full document (~4000 tokens)."
+          }
+        },
+        {
+          "name": "Team Question (micro-cache)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question\": \"Who are the leadership team members?\",\n  \"maxTokens\": 40\n}"
+            },
+            "url": {
+              "raw": "http://localhost:3000/api/optimize/ask",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3000",
+              "path": ["api", "optimize", "ask"]
+            },
+            "description": "Uses team micro-cache for leadership questions. Minimal token usage."
+          }
+        },
+        {
+          "name": "Contact Info (facts-only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question\": \"What is the company email?\",\n  \"maxTokens\": 20\n}"
+            },
+            "url": {
+              "raw": "http://localhost:3000/api/optimize/ask",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3000",
+              "path": ["api", "optimize", "ask"]
+            },
+            "description": "Should return contact info from structured facts without API call."
+          }
+        },
+        {
+          "name": "Token Comparison Test",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question\": \"Tell me about the company's services and approach?\",\n  \"maxTokens\": 100\n}"
+            },
+            "url": {
+              "raw": "http://localhost:3000/api/optimize/ask",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3000",
+              "path": ["api", "optimize", "ask"]
+            },
+            "description": "More complex question requiring services micro-cache. Compare tokens used vs regular endpoint."
+          }
+        }
+      ],
+      "description": "Test scenarios to validate ultra-optimization strategies"
+    }
+  ]
+}
