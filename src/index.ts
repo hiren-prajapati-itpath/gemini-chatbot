@@ -20,7 +20,14 @@ if (!GEMINI_API_KEY) {
 }
 
 const chatBot = new GeminiCachingChatbot(GEMINI_API_KEY);
-const upload = multer({ dest: 'uploads/' });
+
+// Configure multer for Vercel serverless environment
+const upload = multer({ 
+    dest: process.env.VERCEL ? '/tmp' : 'uploads/',
+    limits: {
+        fileSize: 50 * 1024 * 1024 // 50MB limit for Vercel
+    }
+});
 
 app.post('/api/create-cache', upload.single('profileFile'), async (req, res) => {
     try {

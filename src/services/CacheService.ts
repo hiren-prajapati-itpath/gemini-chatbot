@@ -1,44 +1,27 @@
-import { Repository } from 'typeorm';
-import { CacheEntity } from '../entities/CacheEntity.js';
-import { AppDataSource } from '../config/database.js';
+import { Op } from 'sequelize';
+import { CacheModel, CacheCreationAttributes } from '../models/CacheModel.js';
 
 export class CacheService {
-    private cacheRepository: Repository<CacheEntity>;
-
-    constructor() {
-        this.cacheRepository = AppDataSource.getRepository(CacheEntity);
-    }
-
-    async saveCache(cacheData: {
-        name: string;
-        model: string;
-        fileUri?: string;
-        mimeType?: string;
-        systemInstruction?: string;
-        expireTime?: Date;
-        cachedTokens: number;
-        uploadedFileName?: string;
-        metadata?: Record<string, any>;
-    }): Promise<CacheEntity> {
+    async saveCache(cacheData: CacheCreationAttributes): Promise<CacheModel> {
         // Deactivate all existing caches
-        await this.cacheRepository.update(
-            { isActive: true },
-            { isActive: false }
+        await CacheModel.update(
+            { isActive: false },
+            { where: { isActive: true } }
         );
 
         // Create new cache
-        const cache = this.cacheRepository.create({
+        const cache = await CacheModel.create({
             ...cacheData,
             isActive: true
         });
 
-        return await this.cacheRepository.save(cache);
+        return cache;
     }
 
-    async getActiveCache(): Promise<CacheEntity | null> {
-        const cache = await this.cacheRepository.findOne({
+    async getActiveCache(): Promise<CacheModel | null> {
+        const cache = await CacheModel.findOne({
             where: { isActive: true },
-            order: { createdAt: 'DESC' }
+            order: [['createdAt', 'DESC']]
         });
 
         if (!cache) return null;
@@ -46,48 +29,59 @@ export class CacheService {
         // Check if expired
         if (cache.expireTime && new Date() >= cache.expireTime) {
             cache.isActive = false;
-            await this.cacheRepository.save(cache);
+            await cache.save();
             return null;
         }
 
         return cache;
     }
 
-    async getCacheByName(name: string): Promise<CacheEntity | null> {
-        return await this.cacheRepository.findOne({
+    async getCacheByName(name: string): Promise<CacheModel | null> {
+        return await CacheModel.findOne({
             where: { name }
         });
     }
 
-    async updateCache(id: string, updates: Partial<CacheEntity>): Promise<CacheEntity | null> {
-        await this.cacheRepository.update(id, updates);
-        return await this.cacheRepository.findOne({ where: { id } });
+    async updateCache(id: string, updates: Partial<CacheModel>): Promise<CacheModel | null> {
+        const [affectedCount] = await CacheModel.update(updates, {
+            where: { id }
+        });
+
+        if (affectedCount === 0) return null;
+
+        return await CacheModel.findByPk(id);
     }
 
     async deleteCache(id: string): Promise<void> {
-        await this.cacheRepository.delete(id);
+        await CacheModel.destroy({
+            where: { id }
+        });
     }
 
     async deleteCacheByName(name: string): Promise<void> {
-        await this.cacheRepository.delete({ name });
+        await CacheModel.destroy({
+            where: { name }
+        });
     }
 
-    async listCaches(limit = 50): Promise<CacheEntity[]> {
-        return await this.cacheRepository.find({
-            order: { createdAt: 'DESC' },
-            take: limit
+    async listCaches(limit = 50): Promise<CacheModel[]> {
+        return await CacheModel.findAll({
+            order: [['createdAt', 'DESC']],
+            limit
         });
     }
 
     async cleanupExpiredCaches(): Promise<number> {
         const now = new Date();
-        const result = await this.cacheRepository
-            .createQueryBuilder()
-            .delete()
-            .where('expireTime < :now', { now })
-            .execute();
+        const deletedCount = await CacheModel.destroy({
+            where: {
+                expireTime: {
+                    [Op.lt]: now
+                }
+            }
+        });
 
-        return result.affected || 0;
+        return deletedCount;
     }
 
     async getCacheStats(): Promise<{
@@ -96,26 +90,27 @@ export class CacheService {
         expired: number;
         totalTokens: number;
     }> {
-        const total = await this.cacheRepository.count();
-        const active = await this.cacheRepository.count({ where: { isActive: true } });
+        const total = await CacheModel.count();
+        const active = await CacheModel.count({ where: { isActive: true } });
         
         const now = new Date();
-        const expired = await this.cacheRepository
-            .createQueryBuilder('cache')
-            .where('cache.expireTime < :now', { now })
-            .getCount();
+        const expired = await CacheModel.count({
+            where: {
+                expireTime: {
+                    [Op.lt]: now
+                }
+            }
+        });
 
-        const tokenSum = await this.cacheRepository
-            .createQueryBuilder('cache')
-            .select('SUM(cache.cachedTokens)', 'totalTokens')
-            .where('cache.isActive = :active', { active: true })
-            .getRawOne();
+        const tokenSum = await CacheModel.sum('cachedTokens', {
+            where: { isActive: true }
+        });
 
         return {
             total,
             active,
             expired,
-            totalTokens: parseInt(tokenSum?.totalTokens || '0')
+            totalTokens: tokenSum || 0
         };
     }
 }

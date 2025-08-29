@@ -52,18 +52,27 @@ export class GeminiCachingChatbot {
 
     private async initializeServices() {
         try {
-            await initializeDatabase();
-            this.cacheService = new CacheService();
-            await this.loadActiveCache();
-            console.log('✅ Cache service initialized');
+            const db = await initializeDatabase();
+            if (db) {
+                this.cacheService = new CacheService();
+                await this.loadActiveCache();
+                console.log('✅ Cache service initialized');
+            } else {
+                console.log('⚠️  Cache service disabled - running without database persistence');
+            }
         } catch (error) {
             console.error('❌ Failed to initialize cache service:', error);
-            throw error;
+            console.log('⚠️  Continuing without database persistence');
         }
     }
 
     private async loadActiveCache() {
         try {
+            if (!this.cacheService) {
+                console.log('📝 Cache service not available, skipping cache restoration');
+                return;
+            }
+            
             const activeCache = await this.cacheService.getActiveCache();
             if (activeCache) {
                 // Try to find the cache in Gemini API
