@@ -230,11 +230,15 @@ process.on('SIGTERM', async () => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log('🚀 Gemini Context Caching Chatbot Server');
-    console.log(`📡 Server running on http://localhost:${PORT}`);
-    console.log('🤖 Using Gemini 2.5 Flash with explicit caching');
-    console.log('📚 Documentation: https://ai.google.dev/gemini-api/docs/caching');
-});
+
+// Only start the server if not running in Vercel environment
+if (!process.env.VERCEL) {
+    app.listen(PORT, () => {
+        console.log('🚀 Gemini Context Caching Chatbot Server');
+        console.log(`📡 Server running on http://localhost:${PORT}`);
+        console.log('🤖 Using Gemini 2.5 Flash with explicit caching');
+        console.log('📚 Documentation: https://ai.google.dev/gemini-api/docs/caching');
+    });
+}
 
 export default app;

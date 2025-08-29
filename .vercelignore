@@ -1,0 +1,17 @@
+node_modules
+.git
+.env
+.env.local
+.env.example
+src
+*.md
+README.md
+SUPABASE_SETUP.md
+validate-env.mjs
+deploy.sh
+deploy.bat
+tsconfig.json
+questions-test
+uploads
+.vscode
+.gitignore

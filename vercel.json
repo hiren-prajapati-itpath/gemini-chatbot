@@ -5,18 +5,14 @@
     "NODE_ENV": "production"
   },
   "functions": {
-    "src/index.ts": {
+    "api/index.ts": {
       "maxDuration": 30
     }
   },
   "rewrites": [
     {
-      "source": "/api/(.*)",
-      "destination": "/src/index.ts"
-    },
-    {
       "source": "/(.*)",
-      "destination": "/src/index.ts"
+      "destination": "/api/index"
     }
   ]
 }
