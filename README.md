@@ -33,9 +33,50 @@ A powerful chatbot API using Google's Gemini AI with context caching capabilitie
 - `GET /api/db/stats` - Get cache statistics
 - `POST /api/db/cleanup` - Cleanup expired caches
 
-## Deployment to Vercel
+## Deployment
 
-### Prerequisites
+### Deploy to Render (Recommended for this setup)
+
+#### Prerequisites
+1. A Render account ([sign up here](https://render.com))
+2. A PostgreSQL database
+3. A Google Gemini API key
+
+#### Step-by-Step Deployment
+
+1. **Push your code to GitHub**
+   - Make sure your code is in a GitHub repository
+
+2. **Create a new Web Service on Render**
+   - Go to [Render Dashboard](https://dashboard.render.com)
+   - Click "New +" and select "Web Service"
+   - Connect your GitHub repository
+
+3. **Configure the service**
+   - **Build Command**: `npm install && npm run build`
+   - **Start Command**: `npm start`
+   - **Environment**: Node
+   - **Node Version**: 18 or higher
+
+4. **Set Environment Variables**
+   ```env
+   GEMINI_API_KEY=your_gemini_api_key_here
+   DB_HOST=your_database_host
+   DB_PORT=5432
+   DB_USER=your_database_username
+   DB_PASSWORD=your_database_password
+   DB_NAME=gemini_cache_db
+   NODE_ENV=production
+   RENDER=true
+   ```
+
+5. **Deploy**
+   - Click "Create Web Service"
+   - Render will automatically build and deploy your application
+
+### Deploy to Vercel
+
+#### Prerequisites
 1. A Vercel account ([sign up here](https://vercel.com))
 2. A PostgreSQL database (recommendations below)
 3. A Google Gemini API key

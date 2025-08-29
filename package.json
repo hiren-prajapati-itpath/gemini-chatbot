@@ -2,7 +2,7 @@
   "name": "gemini-caching-chatbot",
   "version": "1.0.0",
   "type": "module",
-  "main": "src/index.ts",
+  "main": "dist/index.js",
   "engines": {
     "node": ">=18.0.0"
   },
@@ -10,7 +10,8 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "npm run build && node dist/index.js",
-    "vercel-build": "npm run build"
+    "vercel-build": "npm run build",
+    "render-build": "npm run build"
   },
   "dependencies": {
     "@google/genai": "^1.13.0",
@@ -22,13 +23,13 @@
     "multer": "^2.0.2",
     "pg": "^8.16.3",
     "sequelize": "^6.37.7",
-    "sequelize-typescript": "^2.1.6"
+    "sequelize-typescript": "^2.1.6",
+    "typescript": "^5.9.2"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.3",
     "@types/sequelize": "^4.28.20",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.9.2"
+    "ts-node": "^10.9.2"
   }
 }

@@ -21,11 +21,11 @@ if (!GEMINI_API_KEY) {
 
 const chatBot = new GeminiCachingChatbot(GEMINI_API_KEY);
 
-// Configure multer for Vercel serverless environment
+// Configure multer for serverless and cloud deployment environments
 const upload = multer({ 
-    dest: process.env.VERCEL ? '/tmp' : 'uploads/',
+    dest: (process.env.VERCEL || process.env.RENDER) ? '/tmp' : 'uploads/',
     limits: {
-        fileSize: 50 * 1024 * 1024 // 50MB limit for Vercel
+        fileSize: 50 * 1024 * 1024 // 50MB limit for cloud platforms
     }
 });
 
