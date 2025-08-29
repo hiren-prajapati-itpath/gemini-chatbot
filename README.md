@@ -52,11 +52,16 @@ A powerful chatbot API using Google's Gemini AI with context caching capabilitie
    - Click "New +" and select "Web Service"
    - Connect your GitHub repository
 
-3. **Configure the service**
-   - **Build Command**: `npm install && npm run build`
-   - **Start Command**: `npm start`
+3. **Configure the service** (IMPORTANT: Manual Configuration Required)
+   - **Root Directory**: Leave blank (use repository root)
    - **Environment**: Node
-   - **Node Version**: 18 or higher
+   - **Region**: Oregon (recommended)
+   - **Branch**: main (or your default branch)
+   - **Build Command**: `npm ci && npm run build`
+   - **Start Command**: `node dist/index.js`
+   - **Node Version**: 18.17.0 (or 18+)
+
+   ⚠️ **CRITICAL**: Do NOT use `npm start` or `node src/index.ts` as the start command!
 
 4. **Set Environment Variables**
    ```env
@@ -240,6 +245,55 @@ To enable debug logging, set:
 ```env
 NODE_ENV=development
 ```
+
+### Troubleshooting Render Deployment
+
+#### Common Error: "Cannot find module 'geminiCachingChatbot.js'"
+
+If you see this error:
+```
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/opt/render/project/src/src/geminiCachingChatbot.js'
+```
+
+**Cause**: Render is trying to run TypeScript files directly instead of compiled JavaScript.
+
+**Solution**:
+1. In your Render service settings, ensure:
+   - **Build Command**: `npm ci && npm run build`
+   - **Start Command**: `node dist/index.js` (NOT `npm start` or `node src/index.ts`)
+
+2. Check Environment Variables:
+   - Ensure `NODE_ENV=production` is set
+   - Add `RENDER=true` environment variable
+
+3. Verify Node.js version:
+   - Use Node.js 18.17.0 or higher
+   - Check if `.nvmrc` file is being used
+
+4. Manual Redeploy:
+   - Go to your Render dashboard
+   - Click "Manual Deploy" > "Deploy latest commit"
+
+#### Common Issues
+
+1. **Database Connection Errors**
+   - Verify your database credentials
+   - Ensure your database allows connections from Render IPs
+   - Check if your database is running
+
+2. **Gemini API Errors**
+   - Verify your API key is correct
+   - Check your API quota/limits
+   - Ensure the API key has necessary permissions
+
+3. **File Upload Issues**
+   - Render uses `/tmp` directory for file uploads
+   - Files are automatically cleaned up after request
+
+4. **Build Failures**
+   - Check Render build logs for TypeScript compilation errors
+   - Ensure all dependencies are properly installed
+   - Verify TypeScript configuration
 
 ### Performance Considerations
 

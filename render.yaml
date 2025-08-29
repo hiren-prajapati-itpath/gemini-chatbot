@@ -2,8 +2,13 @@ services:
   - type: web
     name: gemini-chatbot-api
     env: node
-    buildCommand: npm install && npm run build
-    startCommand: npm start
+    region: oregon
+    plan: starter
+    buildCommand: npm ci && npm run build
+    startCommand: node dist/index.js
+    healthCheckPath: /health
     envVars:
       - key: NODE_ENV
         value: production
+      - key: RENDER
+        value: "true"
