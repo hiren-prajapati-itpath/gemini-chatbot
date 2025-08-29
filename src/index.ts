@@ -167,7 +167,26 @@ app.get('/health', (req, res) => {
     res.json({
         status: 'healthy',
         timestamp: new Date().toISOString(),
-        geminiModel: 'gemini-2.5-flash'
+        geminiModel: 'gemini-2.5-flash',
+        environment: process.env.NODE_ENV || 'development',
+        uptime: process.uptime(),
+        version: '1.0.0'
+    });
+});
+
+// Simple endpoint that doesn't require database
+app.get('/', (req, res) => {
+    res.json({
+        message: '🚀 Gemini Context Caching Chatbot API',
+        status: 'running',
+        timestamp: new Date().toISOString(),
+        endpoints: {
+            health: '/health',
+            createCache: 'POST /api/create-cache',
+            ask: 'POST /api/ask',
+            caches: 'GET /api/caches',
+            history: 'GET /api/history'
+        }
     });
 });
 
