@@ -10,7 +10,6 @@ SUPABASE_SETUP.md
 validate-env.mjs
 deploy.sh
 deploy.bat
-tsconfig.json
 questions-test
 uploads
 .vscode

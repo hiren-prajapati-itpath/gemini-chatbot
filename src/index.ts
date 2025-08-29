@@ -232,7 +232,7 @@ process.on('SIGTERM', async () => {
 const PORT = process.env.PORT || 3000;
 
 // Only start the server if not running in Vercel environment
-if (!process.env.VERCEL) {
+if (!process.env.VERCEL && !process.env.NOW_REGION) {
     app.listen(PORT, () => {
         console.log('🚀 Gemini Context Caching Chatbot Server');
         console.log(`📡 Server running on http://localhost:${PORT}`);
