@@ -229,12 +229,28 @@ process.on('SIGTERM', async () => {
     process.exit(0);
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log('🚀 Gemini Context Caching Chatbot Server');
-    console.log(`📡 Server running on http://localhost:${PORT}`);
-    console.log('🤖 Using Gemini 2.5 Flash with explicit caching');
-    console.log('📚 Documentation: https://ai.google.dev/gemini-api/docs/caching');
-});
+const PORT = parseInt(process.env.PORT || '3000');
+
+// Initialize database and start server
+const startServer = async () => {
+    try {
+        // Initialize database first
+        await initializeDatabase();
+        
+        // Start the server
+        app.listen(PORT, "0.0.0.0", () => {
+            console.log('🚀 Gemini Context Caching Chatbot Server');
+            console.log(`📡 Server running on http://localhost:${PORT}`);
+            console.log('🤖 Using Gemini 2.5 Flash with explicit caching');
+            console.log('📚 Documentation: https://ai.google.dev/gemini-api/docs/caching');
+        });
+    } catch (error) {
+        console.error('❌ Failed to start server:', error);
+        process.exit(1);
+    }
+};
+
+// Start the server
+startServer();
 
 export default app;
