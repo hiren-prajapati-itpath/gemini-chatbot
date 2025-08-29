@@ -1,0 +1,25 @@
+{
+  "name": "gemini-caching-chatbot",
+  "version": "1.0.0",
+  "description": "Deployment verification for Render",
+  "deployment": {
+    "platform": "render",
+    "buildCommand": "npm ci && npm run build",
+    "startCommand": "node dist/index.js",
+    "nodeVersion": "18.17.0",
+    "environment": "production"
+  },
+  "files": {
+    "source": "src/",
+    "compiled": "dist/",
+    "entry": "dist/index.js"
+  },
+  "verification": {
+    "buildArtifacts": [
+      "dist/index.js",
+      "dist/geminiCachingChatbot.js",
+      "dist/config/database.js",
+      "dist/services/CacheService.js"
+    ]
+  }
+}
