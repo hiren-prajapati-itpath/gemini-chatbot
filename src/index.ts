@@ -22,7 +22,7 @@ if (!GEMINI_API_KEY) {
 const chatBot = new GeminiCachingChatbot(GEMINI_API_KEY);
 
 // Configure multer for serverless and cloud deployment environments
-const upload = multer({ 
+const upload = multer({
     dest: (process.env.VERCEL || process.env.RENDER) ? '/tmp' : 'uploads/',
     limits: {
         fileSize: 50 * 1024 * 1024 // 50MB limit for cloud platforms
@@ -36,7 +36,7 @@ app.post('/api/create-cache', upload.single('profileFile'), async (req, res) => 
         }
         const filePath = req.file.path;
         const mimeType = req.file.mimetype;
-       
+
         const result = await chatBot.createCompanyCache(filePath, mimeType);
         res.json(result);
     } catch (error: any) {
@@ -226,9 +226,9 @@ app.post('/api/db/cleanup', async (req, res) => {
     try {
         const cacheService = new CacheService();
         const deletedCount = await cacheService.cleanupExpiredCaches();
-        res.json({ 
+        res.json({
             message: `Cleaned up ${deletedCount} expired cache records`,
-            deletedCount 
+            deletedCount
         });
     } catch (error: any) {
         res.status(500).json({ error: error.message });
@@ -248,16 +248,16 @@ process.on('SIGTERM', async () => {
     process.exit(0);
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
-// Only start the server if not running in Vercel environment
-if (!process.env.VERCEL && !process.env.NOW_REGION) {
-    app.listen(PORT, () => {
-        console.log('🚀 Gemini Context Caching Chatbot Server');
-        console.log(`📡 Server running on http://localhost:${PORT}`);
-        console.log('🤖 Using Gemini 2.5 Flash with explicit caching');
-        console.log('📚 Documentation: https://ai.google.dev/gemini-api/docs/caching');
-    });
-}
+// Start the server for all environments except serverless functions
+app.listen(PORT, '0.0.0.0', () => {
+    console.log('🚀 Gemini Context Caching Chatbot Server');
+    console.log(`📡 Server running on http://0.0.0.0:${PORT}`);
+    console.log('🤖 Using Gemini 2.5 Flash with explicit caching');
+    console.log('📚 Documentation: https://ai.google.dev/gemini-api/docs/caching');
+    console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`🚀 Platform: ${process.env.RENDER ? 'Render' : 'Local'}`);
+});
 
 export default app;
