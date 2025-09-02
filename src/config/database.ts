@@ -70,18 +70,6 @@ export const initializeDatabase = async () => {
             throw new Error('DB_PASSWORD cannot be empty');
         }
 
-        console.log('🔍 Database connection config:', {
-            host: process.env.DB_HOST,
-            port: process.env.DB_PORT || '5432',
-            username: process.env.DB_USER,
-            database: process.env.DB_NAME,
-            passwordProvided: !!process.env.DB_PASSWORD,
-            passwordLength: password.length,
-            ssl: !!(process.env.NODE_ENV === 'production' || 
-                   process.env.DB_HOST?.includes('supabase.co') || 
-                   process.env.DB_HOST?.includes('prisma.io'))
-        });
-
         // Get the sequelize instance (this will create it with the config)
         const db = getSequelizeInstance();
 
@@ -93,7 +81,7 @@ export const initializeDatabase = async () => {
         CacheModel.initModel(db);
 
         // Sync database (creates tables if they don't exist)
-        await db.sync({ alter: true });
+        //await db.sync({ alter: true });
         console.log('✅ Database synchronized');
 
         return db;
