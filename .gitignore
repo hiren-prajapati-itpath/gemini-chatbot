@@ -1,8 +1,8 @@
 /node_modules
 /.env
 /.vscode
-.package-lock.json
 /.git
 /uploads
 /dist
 /questions-test
+package-lock.json
