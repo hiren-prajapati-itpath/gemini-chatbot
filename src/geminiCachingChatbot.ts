@@ -4,54 +4,34 @@ import * as path from 'path';
 import { CacheService } from './services/CacheService.js';
 import { initializeDatabase } from './config/database.js';
 import { Response } from 'express';
+import { SessionStorageService } from './services/storage/SessionStorageService.js';
+import { TokenAccountingService, TokenUsage } from './services/TokenAccountingService.js';
+import { SessionContext } from './models/SessionContext.js';
+import { ConversationMessage } from './models/ConversationMessage.js';
+import { StorageFactory } from './config/storage.js';
 
 export class GeminiCachingChatbot {
     private ai: GoogleGenAI;
     private cache: any = null;
     private chatHistory: Array<any> = [];
     private cacheService!: CacheService;
-    private tokenUsageStats = {
-        cacheTokens: 0,
-        conversationTokens: 0,
-        totalRequests: 0,
-        cacheHits: 0
-    };
-    // Pricing (USD per 1M tokens). Can be overridden using env vars.
-    private PRICING = {
-        INPUT_PER_MTOK: Number(process.env.GEM_INPUT_PER_MTOK ?? 0.10),
-        OUTPUT_PER_MTOK: Number(process.env.GEM_OUTPUT_PER_MTOK ?? 0.40),
-        CACHE_CREATE_PER_MTOK: Number(process.env.GEM_CACHE_CREATE_PER_MTOK ?? 0.025),
-        CACHE_STORAGE_PER_MTOK_PER_HR: Number(process.env.GEM_CACHE_STORAGE_PER_MTOK_PER_HR ?? 1.0)
-    };
-    // Cache TTL configuration (8 hours default)
-    private CACHE_TTL = process.env.CACHE_TTL ?? '28800s'; // 8 hours in seconds
-    // Fine-grained token tracking
-    private tokenBreakdown = {
-        totalPromptTokens: 0,
-        totalResponseTokens: 0,
-        totalBilledInputTokens: 0,
-        perQuestion: [] as Array<{
-            question: string;
-            promptTokens: number;
-            responseTokens: number;
-            cachedTokens: number;
-            billedInputTokens: number;
-            totalTokens: number;
-            timestamp: string;
-            mode: 'standard' | 'ultra' | 'stream';
-            estimated?: boolean;
-        }>
-    };
+    private sessionStorage!: SessionStorageService;
+    private tokenAccounting: TokenAccountingService;
     private modelName = process.env.GEMINI_MODEL ?? 'gemini-2.0-flash-001';
 
-    constructor(apiKey: string) {
+    // Keep backward compatibility for existing code
+    private CACHE_TTL = process.env.CACHE_TTL ?? '28800s'; // 8 hours in seconds
+
+    constructor(apiKey: string, storageService?: SessionStorageService) {
         console.log('Initializing Gemini Caching Chatbot with API Key:', apiKey);
         this.ai = new GoogleGenAI({ apiKey });
-        this.initializeServices();
+        this.tokenAccounting = new TokenAccountingService();
+        this.initializeServices(storageService);
     }
 
-    private async initializeServices() {
+    private async initializeServices(storageService?: SessionStorageService) {
         try {
+            // Initialize database and cache service
             const db = await initializeDatabase();
             if (db) {
                 this.cacheService = new CacheService();
@@ -60,9 +40,23 @@ export class GeminiCachingChatbot {
             } else {
                 console.log('⚠️  Cache service disabled - running without database persistence');
             }
+
+            // Initialize session storage
+            if (storageService) {
+                this.sessionStorage = storageService;
+                console.log('✅ Session storage service provided');
+            } else {
+                this.sessionStorage = await StorageFactory.createStorageService();
+                console.log('✅ Session storage service initialized');
+            }
         } catch (error) {
-            console.error('❌ Failed to initialize cache service:', error);
-            console.log('⚠️  Continuing without database persistence');
+            console.error('❌ Failed to initialize services:', error);
+            console.log('⚠️  Continuing with fallback services');
+            // Fallback to in-memory storage if all else fails
+            if (!this.sessionStorage) {
+                const { InMemorySessionStorage } = await import('./services/storage/InMemorySessionStorage.js');
+                this.sessionStorage = new InMemorySessionStorage();
+            }
         }
     }
 
@@ -72,14 +66,16 @@ export class GeminiCachingChatbot {
                 console.log('📝 Cache service not available, skipping cache restoration');
                 return;
             }
-            
+
             const activeCache = await this.cacheService.getActiveCache();
             if (activeCache) {
                 // Try to find the cache in Gemini API
                 const geminiCache = await this.findCacheByName(activeCache.name);
                 if (geminiCache) {
                     this.cache = geminiCache;
-                    this.tokenUsageStats.cacheTokens = activeCache.cachedTokens;
+                    // Initialize token accounting with cache tokens
+                    const cacheTokens = activeCache.cachedTokens;
+                    this.tokenAccounting = new TokenAccountingService(cacheTokens);
                     console.log(`🔄 Restored cache: ${activeCache.name}`);
                 } else if (activeCache.fileUri) {
                     // Cache expired/deleted, recreate from file
@@ -114,15 +110,16 @@ export class GeminiCachingChatbot {
                     ttl: this.CACHE_TTL
                 }
             };
-            
+
             this.cache = await this.ai.caches.create(cacheConfig);
-            this.tokenUsageStats.cacheTokens = this.cache.usageMetadata?.totalTokenCount || 0;
-            
+            const cacheTokens = this.cache.usageMetadata?.totalTokenCount || 0;
+            this.tokenAccounting = new TokenAccountingService(cacheTokens);
+
             // Update DB record
             await this.cacheService.updateCache(record.id, {
                 name: this.cache.name,
                 expireTime: this.cache.expireTime ? new Date(this.cache.expireTime) : undefined,
-                cachedTokens: this.tokenUsageStats.cacheTokens
+                cachedTokens: cacheTokens
             });
 
             console.log(`✅ Cache recreated: ${this.cache.name}`);
@@ -144,7 +141,7 @@ export class GeminiCachingChatbot {
 
     async createCompanyCache(fileUri: string, mimeType: string) {
         const systemInstruction = await this.getSystemInstruction();
-        
+
         const doc = await this.ai.files.upload({
             file: fileUri,
             config: { mimeType },
@@ -159,8 +156,10 @@ export class GeminiCachingChatbot {
                 ttl: this.CACHE_TTL
             }
         };
+
         this.cache = await this.ai.caches.create(cacheConfig);
-        this.tokenUsageStats.cacheTokens = this.cache.usageMetadata?.totalTokenCount || 0;
+        const cacheTokens = this.cache.usageMetadata?.totalTokenCount || 0;
+        this.tokenAccounting = new TokenAccountingService(cacheTokens);
 
         // Save to database
         await this.cacheService.saveCache({
@@ -170,30 +169,28 @@ export class GeminiCachingChatbot {
             mimeType: doc.mimeType,
             systemInstruction: systemInstruction,
             expireTime: this.cache.expireTime ? new Date(this.cache.expireTime) : undefined,
-            cachedTokens: this.tokenUsageStats.cacheTokens,
+            cachedTokens: cacheTokens,
             uploadedFileName: doc.name
         });
 
         // Log cache creation and storage cost
-        const cacheTokens = this.tokenUsageStats.cacheTokens;
-        const createCost = this.cost(cacheTokens, this.PRICING.CACHE_CREATE_PER_MTOK);
-        const storagePerHour = this.cost(cacheTokens, this.PRICING.CACHE_STORAGE_PER_MTOK_PER_HR);
+        const costBreakdown = this.tokenAccounting.getCostBreakdown();
         console.log('[Cache Created]');
         console.log(`- Name: ${this.cache.name}`);
         console.log(`- Cached tokens: ${cacheTokens}`);
-        console.log(`- One-time create cost: $${createCost.toFixed(5)} @ $${this.PRICING.CACHE_CREATE_PER_MTOK}/1M`);
-        console.log(`- Storage per hour: $${storagePerHour.toFixed(5)} @ $${this.PRICING.CACHE_STORAGE_PER_MTOK_PER_HR}/1M`);
+        console.log(`- One-time create cost: $${costBreakdown.cacheCreationCost.oneTimeCostUSD}`);
+        console.log(`- Storage per hour: $${costBreakdown.cachingStorageCost.costPerHourUSD}`);
         if (this.cache.expireTime) console.log(`- Expires: ${this.cache.expireTime}`);
 
         return {
             success: true,
             cacheName: this.cache.name,
-            cachedTokens: this.tokenUsageStats.cacheTokens,
+            cachedTokens: cacheTokens,
             expiresAt: this.cache.expireTime,
             message: 'Company profile has been cached successfully using explicit caching.'
         };
     }
-    
+
     async askQuestion(
         userQuestion: string,
         useStreaming = false,
@@ -208,11 +205,11 @@ export class GeminiCachingChatbot {
             }
         }
         console.log("Using cache:", this.cache.name);
-        
+
         // Auto-detect if this is a list request and increase token limit
         const isListRequest = /\b(recent|all|list|latest|blog posts?|case studies|portfolio|testimonials|awards|careers?|openings?)\b/i.test(userQuestion);
         const outputTokenLimit = maxTokens || (isListRequest ? 1000 : 500);
-        
+
         const generateConfig = {
             model: this.modelName,
             contents: userQuestion,
@@ -225,77 +222,62 @@ export class GeminiCachingChatbot {
                 thinkingConfig: { thinkingBudget: 0 }
             }
         };
-    let response: any;
-    let fullResponse = '';
+
+        let response: any;
+        let fullResponse = '';
+
         if (useStreaming) {
             if (!res) {
                 throw new Error('Response object is required for streaming');
             }
-            
+
             const stream = await this.ai.models.generateContentStream(generateConfig);
             for await (const chunk of stream) {
                 const chunkText = chunk.text || '';
                 if (chunkText) {
-                    // Append the streamed chunk to the full response
                     fullResponse += chunkText;
-                    // Send chunk directly to client
                     res.write(`data: ${JSON.stringify({ chunk: chunkText })}\n\n`);
                     console.log("[stream-chunk]", chunkText.substring(0, 100) + "...");
                 }
             }
-            
-            // End the stream
+
             res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
             res.end();
-            
+
             response = {
                 text: fullResponse
-                // usageMetadata not available in stream mode
             };
         } else {
             response = await this.ai.models.generateContent(generateConfig);
             fullResponse = response.text;
         }
 
-    this.chatHistory.push({ role: 'user', content: userQuestion, timestamp: new Date() });
-    this.chatHistory.push({ role: 'assistant', content: fullResponse, timestamp: new Date() });
-    const usageData = response.usageMetadata || {};
-    const promptTokens = usageData.promptTokenCount || this.estimateTokens(userQuestion);
-    const responseTokens = usageData.candidatesTokenCount || this.estimateTokens(fullResponse);
-    const cachedTokens = usageData.cachedContentTokenCount || 0;
-    const billedInputTokens = Math.max(0, (usageData.promptTokenCount ?? promptTokens) - (usageData.cachedContentTokenCount ?? 0));
-    const isEstimated = !response.usageMetadata; // stream mode
-        this.tokenUsageStats.conversationTokens += promptTokens + responseTokens;
-        this.tokenBreakdown.totalPromptTokens += promptTokens;
-        this.tokenBreakdown.totalResponseTokens += responseTokens;
-        this.tokenBreakdown.totalBilledInputTokens += billedInputTokens;
-        this.tokenBreakdown.perQuestion.push({
-            question: userQuestion,
+        this.chatHistory.push({ role: 'user', content: userQuestion, timestamp: new Date() });
+        this.chatHistory.push({ role: 'assistant', content: fullResponse, timestamp: new Date() });
+
+        const usageData = response.usageMetadata || {};
+        const promptTokens = usageData.promptTokenCount || this.estimateTokens(userQuestion);
+        const responseTokens = usageData.candidatesTokenCount || this.estimateTokens(fullResponse);
+        const cachedTokens = usageData.cachedContentTokenCount || 0;
+        const billedInputTokens = Math.max(0, (usageData.promptTokenCount ?? promptTokens) - (usageData.cachedContentTokenCount ?? 0));
+        const isEstimated = !response.usageMetadata; // stream mode
+
+        // Update token accounting using the service
+        const tokenUsage: TokenUsage = {
             promptTokens,
             responseTokens,
             cachedTokens,
             billedInputTokens,
             totalTokens: promptTokens + responseTokens,
-            timestamp: new Date().toISOString(),
-            mode: useStreaming ? 'stream' : 'standard',
             estimated: isEstimated
-        });
-    this.tokenUsageStats.totalRequests++;
-    if (cachedTokens > 0) this.tokenUsageStats.cacheHits++;
+        };
 
-    // Detailed per-question billing log
-    const inputCost = this.cost(billedInputTokens, this.PRICING.INPUT_PER_MTOK);
-    const outputCost = this.cost(responseTokens, this.PRICING.OUTPUT_PER_MTOK);
-    const storagePerHour = this.cost(this.tokenUsageStats.cacheTokens, this.PRICING.CACHE_STORAGE_PER_MTOK_PER_HR);
-    const tag = isEstimated ? '[Token Usage - Estimated]' : '[Token Usage]';
-    console.log(tag);
-    console.log(`Q#${this.tokenUsageStats.totalRequests}: ${userQuestion}`);
-    console.log(`- promptTokens (includes cache): ${promptTokens}`);
-    console.log(`- cachedTokens (reused, not billed on input): ${cachedTokens}${isEstimated ? ' (n/a in stream)' : ''}`);
-    console.log(`- new input tokens billed: ${billedInputTokens}${isEstimated ? ' (estimated)' : ''}`);
-    console.log(`- output tokens billed: ${responseTokens}${isEstimated ? ' (estimated)' : ''}`);
-    console.log(`- est. input cost: $${inputCost.toFixed(6)} | est. output cost: $${outputCost.toFixed(6)}`);
-    console.log(`- cache storage (per hour): $${storagePerHour.toFixed(5)} for ${this.tokenUsageStats.cacheTokens} tokens`);
+        this.tokenAccounting.updateTokenStats(
+            userQuestion,
+            tokenUsage,
+            useStreaming ? 'stream' : 'standard'
+        );
+
         return {
             response: fullResponse,
             tokenUsage: {
@@ -311,8 +293,21 @@ export class GeminiCachingChatbot {
         };
     }
 
-    async startChat(initialMessage?: string) {
+    private generateSessionId(): string {
+        return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    }
+
+    async startChat(sessionId?: string, initialMessage?: string) {
         if (!this.cache) throw new Error('No cache available. Please create a company cache first.');
+
+        const finalSessionId = sessionId || this.generateSessionId();
+
+        // Check if session already exists
+        const existingSession = await this.sessionStorage.getSession(finalSessionId);
+        if (existingSession) {
+            throw new Error(`Session ${finalSessionId} already exists. Use continueChat to continue the conversation.`);
+        }
+
         const chat = this.ai.chats.create({
             model: this.modelName,
             config: {
@@ -321,11 +316,188 @@ export class GeminiCachingChatbot {
             },
             history: []
         });
+
+        const sessionContext: SessionContext = {
+            sessionId: finalSessionId,
+            geminiChat: null, // We don't store chat objects, only rebuild from Redis history
+            createdAt: new Date(),
+            lastActivity: new Date(),
+            messageCount: 0
+        };
+
+        // Save session metadata to Redis (no geminiChat object stored)
+        await this.sessionStorage.saveSession(sessionContext);
+        console.log(`📝 Created new chat session: ${finalSessionId}`);
+
         if (initialMessage) {
+            // Create chat object for initial message (no history yet)
             const response = await chat.sendMessage({ message: initialMessage });
-            return { chat, initialResponse: response.text };
+            const responseText = response.text || '';
+            
+            sessionContext.messageCount = 2;
+            sessionContext.lastActivity = new Date();
+            await this.sessionStorage.saveSession(sessionContext);
+
+            // Save messages to Redis
+            await this.sessionStorage.saveMessage({
+                sessionId: finalSessionId,
+                role: 'user',
+                content: initialMessage,
+                timestamp: new Date(),
+                messageIndex: 1
+            });
+
+            await this.sessionStorage.saveMessage({
+                sessionId: finalSessionId,
+                role: 'assistant',
+                content: responseText,
+                timestamp: new Date(),
+                messageIndex: 2
+            });
+
+            console.log(`💬 Session ${finalSessionId}: Initial exchange completed`);
+            return {
+                sessionId: finalSessionId,
+                response: responseText,
+                messageCount: sessionContext.messageCount
+            };
         }
-        return { chat, initialResponse: null };
+
+        return {
+            sessionId: finalSessionId,
+            response: null,
+            messageCount: 0
+        };
+    }
+
+    async continueChat(sessionId: string, message: string): Promise<{
+        response: string;
+        sessionId: string;
+        messageCount: number;
+        tokenUsage?: any;
+        cacheHit?: boolean;
+        usageMetadata?: any;
+    }> {
+        const session = await this.sessionStorage.getSession(sessionId);
+        if (!session) {
+            throw new Error(`Session ${sessionId} not found. Please start a new chat session.`);
+        }
+
+        try {
+            // Always rebuild Gemini chat object from Redis message history
+            const previousMessages = await this.sessionStorage.getSessionMessages(sessionId);
+            
+            // Convert stored messages to Gemini history format
+            const history = previousMessages?.map(msg => ({
+                role: msg.role === 'user' ? 'user' : 'model',
+                parts: [{ text: msg.content }]
+            })) || [];
+
+            // Create fresh chat object with full conversation context
+            const geminiChat = this.ai.chats.create({
+                model: this.modelName,
+                config: {
+                    cachedContent: this.cache.name,
+                    temperature: 0.7
+                },
+                history: history // ✅ Full context from Redis message history
+            });
+
+            console.log(`🔄 Built chat object with ${history.length} previous messages for session ${sessionId}`);
+
+            // Send message to the chat object (with complete context)
+            const response = await geminiChat.sendMessage({ message });
+            const responseText = response.text || '';
+
+            // Update session metadata
+            session.messageCount += 2;
+            session.lastActivity = new Date();
+            await this.sessionStorage.saveSession(session);
+
+            // Save user message to Redis
+            await this.sessionStorage.saveMessage({
+                sessionId,
+                role: 'user',
+                content: message,
+                timestamp: new Date(),
+                messageIndex: session.messageCount - 1
+            });
+
+            // Save assistant response to Redis
+            await this.sessionStorage.saveMessage({
+                sessionId,
+                role: 'assistant',
+                content: responseText,
+                timestamp: new Date(),
+                messageIndex: session.messageCount
+            });
+
+            // Track tokens using the service
+            const usageData = response.usageMetadata || {};
+            const promptTokens = usageData.promptTokenCount || this.estimateTokens(message);
+            const responseTokens = usageData.candidatesTokenCount || this.estimateTokens(responseText);
+            const cachedTokens = usageData.cachedContentTokenCount || 0;
+            const billedInputTokens = Math.max(0, promptTokens - cachedTokens);
+
+            const tokenUsage: TokenUsage = {
+                promptTokens,
+                responseTokens,
+                cachedTokens,
+                billedInputTokens,
+                totalTokens: promptTokens + responseTokens,
+                estimated: !response.usageMetadata
+            };
+
+            this.tokenAccounting.updateTokenStats(message, tokenUsage, 'chat', sessionId);
+
+            console.log(`💬 Session ${sessionId}: Continued conversation (${session.messageCount} total messages)`);
+
+            return {
+                response: responseText,
+                sessionId: sessionId,
+                messageCount: session.messageCount,
+                tokenUsage: response.usageMetadata || null,
+                cacheHit: cachedTokens > 0,
+                usageMetadata: usageData
+            };
+        } catch (error) {
+            console.error(`❌ Error in session ${sessionId}:`, error);
+            throw error;
+        }
+    }
+
+    async getSessionMessages(sessionId: string, useCuratedHistory: boolean = false): Promise<any[] | null> {
+        return await this.sessionStorage.getSessionMessages(sessionId);
+    }
+
+    async getSessionInfo(sessionId: string): Promise<SessionContext | null> {
+        return await this.sessionStorage.getSession(sessionId);
+    }
+
+    async listActiveSessions(): Promise<{ sessionId: string; createdAt: Date; lastActivity: Date; messageCount: number }[]> {
+        const sessions = await this.sessionStorage.listActiveSessions();
+        return sessions.map(session => ({
+            sessionId: session.sessionId,
+            createdAt: session.createdAt,
+            lastActivity: session.lastActivity,
+            messageCount: session.messageCount
+        }));
+    }
+
+    async deleteSession(sessionId: string): Promise<boolean> {
+        const deleted = await this.sessionStorage.deleteSession(sessionId);
+        if (deleted) {
+            console.log(`🗑️ Deleted session: ${sessionId}`);
+        }
+        return deleted;
+    }
+
+    async cleanupInactiveSessions(maxInactiveHours: number = 24): Promise<number> {
+        const cleanedCount = await this.sessionStorage.cleanupInactiveSessions(maxInactiveHours);
+        if (cleanedCount > 0) {
+            console.log(`🧹 Cleaned up ${cleanedCount} inactive sessions`);
+        }
+        return cleanedCount;
     }
 
     async listCaches() {
@@ -354,174 +526,24 @@ export class GeminiCachingChatbot {
 
     async deleteCache() {
         if (!this.cache) throw new Error('No cache to delete');
-        
-        // Delete from Gemini API
+
         await this.ai.caches.delete({ name: this.cache.name });
-        
-        // Remove from database
+
         const activeCache = await this.cacheService.getActiveCache();
         if (activeCache) {
             await this.cacheService.deleteCache(activeCache.id);
         }
-        
+
         this.cache = null;
         return true;
-    }
-
-    calculateCostSavings() {
-        // Prefer chat history when available; otherwise fall back to requests processed
-        const totalRequests = this.tokenUsageStats.totalRequests;
-        const conversationRounds = this.chatHistory.length > 0
-            ? Math.floor(this.chatHistory.length / 2)
-            : totalRequests;
-
-        const cacheTokens = this.tokenUsageStats.cacheTokens;
-        const totalNewInputTokens = this.tokenBreakdown.totalBilledInputTokens; // Only the new tokens are billed on input with caching
-
-        // Hypothetical scenario WITHOUT caching: each request would include the full cache tokens + the new input tokens
-        const inputTokensWithoutCaching = totalNewInputTokens + (cacheTokens * totalRequests);
-        const inputTokensWithCaching = totalNewInputTokens;
-        const inputTokensSaved = Math.max(0, inputTokensWithoutCaching - inputTokensWithCaching); // == cacheTokens * totalRequests
-
-        // Costs (input side only). Output costs are identical in both scenarios.
-        const inputCostWithoutCachingUSD = this.cost(inputTokensWithoutCaching, this.PRICING.INPUT_PER_MTOK);
-        const inputCostWithCachingUSD = this.cost(inputTokensWithCaching, this.PRICING.INPUT_PER_MTOK);
-        const inputCostSavedUSD = inputCostWithoutCachingUSD - inputCostWithCachingUSD;
-
-        // Cache one-time and storage costs
-        const cacheCreateCostUSD = this.cost(cacheTokens, this.PRICING.CACHE_CREATE_PER_MTOK);
-        const cacheStoragePerHourUSD = this.cost(cacheTokens, this.PRICING.CACHE_STORAGE_PER_MTOK_PER_HR);
-
-        // Human-friendly means
-        const meanPromptTokens = totalRequests > 0 ? Number((this.tokenBreakdown.totalPromptTokens / totalRequests).toFixed(1)) : 0;
-        const meanBilledInputTokens = totalRequests > 0 ? Number((this.tokenBreakdown.totalBilledInputTokens / totalRequests).toFixed(1)) : 0;
-        const meanResponseTokens = totalRequests > 0 ? Number((this.tokenBreakdown.totalResponseTokens / totalRequests).toFixed(1)) : 0;
-        const meanTotalTokens = totalRequests > 0 ? Number(((this.tokenBreakdown.totalPromptTokens + this.tokenBreakdown.totalResponseTokens) / totalRequests).toFixed(1)) : 0;
-
-        return {
-            overview: {
-                cacheTokens,
-                conversationTokens: this.tokenUsageStats.conversationTokens,
-                totalRequests,
-                cacheHits: this.tokenUsageStats.cacheHits,
-                cacheHitRate: totalRequests > 0 ? Number(((this.tokenUsageStats.cacheHits / totalRequests) * 100).toFixed(1)) : 0,
-                conversationRounds
-            },
-            inputComparison: {
-                withCaching: {
-                    tokens: inputTokensWithCaching,
-                    costUSD: Number(inputCostWithCachingUSD.toFixed(6))
-                },
-                withoutCaching: {
-                    tokens: inputTokensWithoutCaching,
-                    costUSD: Number(inputCostWithoutCachingUSD.toFixed(6))
-                },
-                saved: {
-                    tokens: inputTokensSaved,
-                    costUSD: Number(inputCostSavedUSD.toFixed(6)),
-                    percent: inputTokensWithoutCaching > 0 ? Number(((inputTokensSaved / inputTokensWithoutCaching) * 100).toFixed(2)) : 0
-                }
-            },
-            cacheCosts: {
-                createOnceUSD: Number(cacheCreateCostUSD.toFixed(6)),
-                storagePerHourUSD: Number(cacheStoragePerHourUSD.toFixed(6)),
-                expiresAt: this.cache?.expireTime ?? null
-            },
-            meansPerQuestion: {
-                // Note: meanPromptTokens includes cached tokens; meanBilledInputTokens are the new, actually billed input tokens
-                promptTokens: meanPromptTokens,
-                billedInputTokens: meanBilledInputTokens,
-                responseTokens: meanResponseTokens,
-                totalTokens: meanTotalTokens
-            }
-        };
-    }
-
-    // Detailed analytics including per-question breakdown
-    getTokenAnalyticsDetailed(limit = 100) {
-        const total = this.tokenUsageStats.totalRequests || 1;
-        const perQuestion = this.tokenBreakdown.perQuestion.slice(-limit);
-        return {
-            totals: {
-                requests: this.tokenUsageStats.totalRequests,
-                promptTokens: this.tokenBreakdown.totalPromptTokens,
-                billedInputTokens: this.tokenBreakdown.totalBilledInputTokens,
-                responseTokens: this.tokenBreakdown.totalResponseTokens,
-                totalTokens: this.tokenBreakdown.totalPromptTokens + this.tokenBreakdown.totalResponseTokens
-            },
-            means: {
-                perQuestion: Number(((this.tokenBreakdown.totalPromptTokens + this.tokenBreakdown.totalResponseTokens) / total).toFixed(1)),
-                // input shows promptTokens (includes cache); inputBilled shows only new tokens actually billed
-                input: Number((this.tokenBreakdown.totalPromptTokens / total).toFixed(1)),
-                inputBilled: Number((this.tokenBreakdown.totalBilledInputTokens / total).toFixed(1)),
-                output: Number((this.tokenBreakdown.totalResponseTokens / total).toFixed(1))
-            },
-            perQuestion
-        };
-    }
-
-    // Human-friendly cost summary matching the plain-English explanation
-    getCostBreakdown() {
-        const total = this.tokenUsageStats.totalRequests || 0;
-        const cacheTokens = this.tokenUsageStats.cacheTokens;
-        const avgNewInputTokens = total > 0 ? this.tokenBreakdown.totalBilledInputTokens / total : 0;
-        const avgOutputTokens = total > 0 ? this.tokenBreakdown.totalResponseTokens / total : 0;
-
-        const storagePerHourUSD = this.cost(cacheTokens, this.PRICING.CACHE_STORAGE_PER_MTOK_PER_HR);
-        const cacheCreateUSD = this.cost(cacheTokens, this.PRICING.CACHE_CREATE_PER_MTOK);
-        const inputCostPerQuestionUSD = this.cost(avgNewInputTokens, this.PRICING.INPUT_PER_MTOK);
-        const outputCostPerAnswerUSD = this.cost(avgOutputTokens, this.PRICING.OUTPUT_PER_MTOK);
-
-        return {
-            cachingStorageCost: {
-                cacheTokens,
-                pricePerMTokPerHourUSD: this.PRICING.CACHE_STORAGE_PER_MTOK_PER_HR,
-                costPerHourUSD: Number(storagePerHourUSD.toFixed(6))
-            },
-            cacheCreationCost: {
-                cacheTokens,
-                pricePerMTokUSD: this.PRICING.CACHE_CREATE_PER_MTOK,
-                oneTimeCostUSD: Number(cacheCreateUSD.toFixed(6))
-            },
-            inputCostPerAverageQuestion: {
-                avgNewInputTokens: Number(avgNewInputTokens.toFixed(1)),
-                pricePerMTokUSD: this.PRICING.INPUT_PER_MTOK,
-                costUSD: Number(inputCostPerQuestionUSD.toFixed(7))
-            },
-            outputCostPerAverageAnswer: {
-                avgOutputTokens: Number(avgOutputTokens.toFixed(1)),
-                pricePerMTokUSD: this.PRICING.OUTPUT_PER_MTOK,
-                costUSD: Number(outputCostPerAnswerUSD.toFixed(6))
-            },
-            notes: {
-                promptTokensExplain: 'promptTokens includes cached + new tokens; only the new (billedInputTokens) are charged for input.',
-                effectiveness: 'Caching shifts most input cost away; storage is a small flat hourly fee.'
-            }
-        };
     }
 
     estimateTokens(text: string) {
         return Math.ceil(text.length / 4);
     }
 
-    getConversationHistory() {
-        return this.chatHistory;
-    }
-
-    resetConversation() {
-        this.chatHistory = [];
-        this.tokenUsageStats.conversationTokens = 0;
-        this.tokenUsageStats.totalRequests = 0;
-        this.tokenUsageStats.cacheHits = 0;
-        this.tokenBreakdown = {
-            totalPromptTokens: 0,
-            totalResponseTokens: 0,
-            totalBilledInputTokens: 0,
-            perQuestion: []
-        };
-    }
-
-    private cost(tokens: number, perMTokUSD: number) {
-        return (tokens / 1_000_000) * perMTokUSD;
+    // Public getters for services
+    getTokenAccounting(): TokenAccountingService {
+        return this.tokenAccounting;
     }
 }
