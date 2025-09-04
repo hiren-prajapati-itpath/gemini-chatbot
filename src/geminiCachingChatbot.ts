@@ -297,7 +297,13 @@ export class GeminiCachingChatbot {
         return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     }
 
-    async startChat(sessionId?: string, initialMessage?: string) {
+    async startChat(
+        sessionId?: string, 
+        initialMessage?: string, 
+        useStreaming = false,
+        maxTokens?: number,
+        res?: Response
+    ) {
         if (!this.cache) throw new Error('No cache available. Please create a company cache first.');
 
         const finalSessionId = sessionId || this.generateSessionId();
@@ -308,11 +314,19 @@ export class GeminiCachingChatbot {
             throw new Error(`Session ${finalSessionId} already exists. Use continueChat to continue the conversation.`);
         }
 
+        // Auto-detect if this is a list request and increase token limit
+        const isListRequest = initialMessage && /\b(recent|all|list|latest|blog posts?|case studies|portfolio|testimonials|awards|careers?|openings?)\b/i.test(initialMessage);
+        const outputTokenLimit = maxTokens || (isListRequest ? 1000 : 500);
+
         const chat = this.ai.chats.create({
             model: this.modelName,
             config: {
                 cachedContent: this.cache.name,
-                temperature: 0.7
+                temperature: 0.7,
+                topP: 0.8,
+                topK: 40,
+                maxOutputTokens: outputTokenLimit,
+                thinkingConfig: { thinkingBudget: 0 }
             },
             history: []
         });
@@ -330,9 +344,40 @@ export class GeminiCachingChatbot {
         console.log(`📝 Created new chat session: ${finalSessionId}`);
 
         if (initialMessage) {
-            // Create chat object for initial message (no history yet)
-            const response = await chat.sendMessage({ message: initialMessage });
-            const responseText = response.text || '';
+            let response: any;
+            let responseText = '';
+
+            if (useStreaming) {
+                if (!res) {
+                    throw new Error('Response object is required for streaming');
+                }
+
+                const stream = await chat.sendMessageStream({ message: initialMessage });
+                for await (const chunk of stream) {
+                    const chunkText = chunk.text || '';
+                    if (chunkText) {
+                        responseText += chunkText;
+                        res.write(`data: ${JSON.stringify({ chunk: chunkText })}\n\n`);
+                        console.log("[stream-chunk]", chunkText.substring(0, 100) + "...");
+                    }
+                }
+
+                // Include session metadata in the final streaming response
+                res.write(`data: ${JSON.stringify({ 
+                    done: true, 
+                    sessionId: finalSessionId,
+                    messageCount: 2
+                })}\n\n`);
+                res.end();
+
+                response = {
+                    text: responseText,
+                    usageMetadata: null // Streaming doesn't provide metadata immediately
+                };
+            } else {
+                response = await chat.sendMessage({ message: initialMessage });
+                responseText = response.text || '';
+            }
             
             sessionContext.messageCount = 2;
             sessionContext.lastActivity = new Date();
@@ -355,11 +400,32 @@ export class GeminiCachingChatbot {
                 messageIndex: 2
             });
 
+            // Track tokens using the service
+            const usageData = response.usageMetadata || {};
+            const promptTokens = usageData.promptTokenCount || this.estimateTokens(initialMessage);
+            const responseTokens = usageData.candidatesTokenCount || this.estimateTokens(responseText);
+            const cachedTokens = usageData.cachedContentTokenCount || 0;
+            const billedInputTokens = Math.max(0, promptTokens - cachedTokens);
+
+            const tokenUsage: TokenUsage = {
+                promptTokens,
+                responseTokens,
+                cachedTokens,
+                billedInputTokens,
+                totalTokens: promptTokens + responseTokens,
+                estimated: !response.usageMetadata
+            };
+
+            this.tokenAccounting.updateTokenStats(initialMessage, tokenUsage, useStreaming ? 'stream' : 'chat', finalSessionId);
+
             console.log(`💬 Session ${finalSessionId}: Initial exchange completed`);
             return {
                 sessionId: finalSessionId,
                 response: responseText,
-                messageCount: sessionContext.messageCount
+                messageCount: sessionContext.messageCount,
+                tokenUsage: response.usageMetadata || null,
+                cacheHit: cachedTokens > 0,
+                usageMetadata: usageData
             };
         }
 
@@ -370,7 +436,13 @@ export class GeminiCachingChatbot {
         };
     }
 
-    async continueChat(sessionId: string, message: string): Promise<{
+    async continueChat(
+        sessionId: string, 
+        message: string,
+        useStreaming = false,
+        maxTokens?: number,
+        res?: Response
+    ): Promise<{
         response: string;
         sessionId: string;
         messageCount: number;
@@ -393,21 +465,61 @@ export class GeminiCachingChatbot {
                 parts: [{ text: msg.content }]
             })) || [];
 
+            // Auto-detect if this is a list request and increase token limit
+            const isListRequest = /\b(recent|all|list|latest|blog posts?|case studies|portfolio|testimonials|awards|careers?|openings?)\b/i.test(message);
+            const outputTokenLimit = maxTokens || (isListRequest ? 1000 : 500);
+
             // Create fresh chat object with full conversation context
             const geminiChat = this.ai.chats.create({
                 model: this.modelName,
                 config: {
                     cachedContent: this.cache.name,
-                    temperature: 0.7
+                    temperature: 0.7,
+                    topP: 0.8,
+                    topK: 40,
+                    maxOutputTokens: outputTokenLimit,
+                    thinkingConfig: { thinkingBudget: 0 }
                 },
                 history: history // ✅ Full context from Redis message history
             });
 
             console.log(`🔄 Built chat object with ${history.length} previous messages for session ${sessionId}`);
 
-            // Send message to the chat object (with complete context)
-            const response = await geminiChat.sendMessage({ message });
-            const responseText = response.text || '';
+            let response: any;
+            let responseText = '';
+
+            if (useStreaming) {
+                if (!res) {
+                    throw new Error('Response object is required for streaming');
+                }
+
+                const stream = await geminiChat.sendMessageStream({ message });
+                for await (const chunk of stream) {
+                    const chunkText = chunk.text || '';
+                    if (chunkText) {
+                        responseText += chunkText;
+                        res.write(`data: ${JSON.stringify({ chunk: chunkText })}\n\n`);
+                        console.log("[stream-chunk]", chunkText.substring(0, 100) + "...");
+                    }
+                }
+
+                // Include session metadata in the final streaming response
+                res.write(`data: ${JSON.stringify({ 
+                    done: true, 
+                    sessionId: sessionId,
+                    messageCount: session.messageCount + 2
+                })}\n\n`);
+                res.end();
+
+                response = {
+                    text: responseText,
+                    usageMetadata: null // Streaming doesn't provide metadata immediately
+                };
+            } else {
+                // Send message to the chat object (with complete context)
+                response = await geminiChat.sendMessage({ message });
+                responseText = response.text || '';
+            }
 
             // Update session metadata
             session.messageCount += 2;
@@ -448,7 +560,7 @@ export class GeminiCachingChatbot {
                 estimated: !response.usageMetadata
             };
 
-            this.tokenAccounting.updateTokenStats(message, tokenUsage, 'chat', sessionId);
+            this.tokenAccounting.updateTokenStats(message, tokenUsage, useStreaming ? 'stream' : 'chat', sessionId);
 
             console.log(`💬 Session ${sessionId}: Continued conversation (${session.messageCount} total messages)`);
 
