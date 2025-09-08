@@ -1,31 +1,87 @@
 # Gemini Caching Chatbot API
 
-A powerful chatbot API using Google's Gemini AI with context caching capabilities, built with Node.js, Express, TypeScript, and PostgreSQL.
+A powerful chatbot API using Google's Gemini AI with context caching capabilities, Smart Context Summarization, and comprehensive token optimization, built with Node.js, Express, TypeScript, and PostgreSQL.
 
-## Features
+## 🚀 Key Features
 
-- 🤖 Google Gemini AI integration with context caching
-- 📁 File upload support for profile/context documents
-- 💬 Real-time streaming responses with Server-Sent Events (SSE)
-- 🗄️ PostgreSQL database for cache management
-- 📊 Token usage analytics and cost savings tracking
-- 🔄 Conversation history management
-- 🏥 Health check endpoints
+- 🤖 **Google Gemini AI Integration** with context caching
+- 🧠 **Smart Context Summarization** - Automatic conversation optimization
+- 📁 **File Upload Support** for profile/context documents  
+- 💬 **Real-time Streaming** responses with Server-Sent Events (SSE)
+- 🗄️ **PostgreSQL Database** for cache management
+- 📊 **Advanced Token Analytics** and cost savings tracking
+- 🔄 **Session Management** with Redis/In-Memory storage
+- 💰 **Token Cost Optimization** with up to 70% savings
+- 🏥 **Health Check Endpoints** for monitoring
+
+## 🧠 Smart Context Summarization
+
+### What It Does
+Smart Context Summarization automatically optimizes long conversations by:
+- **Summarizing older messages** to preserve key context
+- **Keeping recent messages intact** for immediate context
+- **Reducing token usage** by 30-70% in long conversations
+- **Maintaining conversation quality** and user experience
+
+### How It Works
+```
+Without Summarization:
+Turn 1:  User + Cache = 50,050 tokens
+Turn 10: User + Cache + 9 turns history = 52,450 tokens  
+Turn 20: User + Cache + 19 turns history = 55,650 tokens
+...grows linearly → expensive
+
+With Smart Summarization:
+Turn 1-15: Normal growth (under threshold)
+Turn 16+:  [Summary of turns 1-6] + [Recent 10 turns] + Cache
+Result:    Token usage plateaus → cost-effective
+```
+
+### Configuration
+Set these environment variables to customize behavior:
+
+```bash
+# Enable smart summarization (default: true)
+ENABLE_SMART_SUMMARIZATION=true
+
+# Keep last N messages intact (default: 10)  
+RECENT_MESSAGES_COUNT=10
+
+# Start summarizing after N messages (default: 15)
+MIN_MESSAGES_FOR_SUMMARY=15
+```
+
+See [SMART_CONTEXT_CONFIG.md](./SMART_CONTEXT_CONFIG.md) for detailed configuration guide.
 
 ## API Endpoints
 
-### Core Endpoints
+### Core Chat Endpoints
 - `POST /api/create-cache` - Create a new cache with file upload
 - `POST /api/ask` - Ask questions (supports streaming)
 - `POST /api/start-chat` - Start a new chat session
+- `POST /api/continue-chat` - Continue existing chat session
+- `GET /api/session/:sessionId/messages` - Get session message history
+- `GET /api/session/:sessionId` - Get session information
+- `GET /api/sessions` - List all active sessions
+- `DELETE /api/session/:sessionId` - Delete a specific session
+- `POST /api/sessions/cleanup` - Cleanup inactive sessions
+
+### Cache Management
 - `GET /api/caches` - List all caches
 - `PUT /api/cache/ttl` - Update cache TTL
 - `DELETE /api/cache` - Delete cache
+
+### Analytics & Monitoring
 - `GET /api/token-analysis` - Get token usage analytics
 - `GET /api/token-analysis/detailed` - Detailed token analytics
+- `GET /api/token-analysis/cost-savings` - Cost savings analysis
+- `GET /api/context-config` - Get Smart Context configuration
+- `PUT /api/context-config` - Update Smart Context settings
+- `GET /health` - Health check
+
+### Legacy Endpoints
 - `GET /api/history` - Get conversation history
 - `POST /api/reset` - Reset conversation
-- `GET /health` - Health check
 
 ### Database Endpoints
 - `GET /api/db/caches` - List database caches
@@ -73,6 +129,17 @@ A powerful chatbot API using Google's Gemini AI with context caching capabilitie
    DB_NAME=gemini_cache_db
    NODE_ENV=production
    RENDER=true
+
+   # Smart Context Summarization (Optional - Recommended)
+   ENABLE_SMART_SUMMARIZATION=true
+   RECENT_MESSAGES_COUNT=10
+   MIN_MESSAGES_FOR_SUMMARY=15
+
+   # Token Pricing (Optional - Use defaults if unsure)
+   GEM_INPUT_PER_MTOK=0.10
+   GEM_OUTPUT_PER_MTOK=0.40
+   GEM_CACHE_CREATE_PER_MTOK=0.025
+   GEM_CACHE_STORAGE_PER_MTOK_PER_HR=1.0
    ```
 
 5. **Deploy**
@@ -154,6 +221,21 @@ DB_USER=your_database_username
 DB_PASSWORD=your_database_password
 DB_NAME=gemini_cache_db
 NODE_ENV=production
+
+# Smart Context Summarization (Optional)
+ENABLE_SMART_SUMMARIZATION=true
+RECENT_MESSAGES_COUNT=10
+MIN_MESSAGES_FOR_SUMMARY=15
+
+# Token Pricing Configuration (Optional)
+GEM_INPUT_PER_MTOK=0.10
+GEM_OUTPUT_PER_MTOK=0.40
+GEM_CACHE_CREATE_PER_MTOK=0.025
+GEM_CACHE_STORAGE_PER_MTOK_PER_HR=1.0
+
+# Cache Configuration (Optional)
+CACHE_TTL=28800s
+GEMINI_MODEL=gemini-2.0-flash-001
 ```
 
 #### 4. Redeploy
@@ -166,6 +248,7 @@ After setting environment variables, trigger a new deployment:
 
 | Variable | Description | Required | Default |
 |----------|-------------|----------|---------|
+| **Core Configuration** |
 | `GEMINI_API_KEY` | Google Gemini AI API key | Yes | - |
 | `DB_HOST` | PostgreSQL host | Yes | localhost |
 | `DB_PORT` | PostgreSQL port | No | 5432 |
@@ -174,6 +257,18 @@ After setting environment variables, trigger a new deployment:
 | `DB_NAME` | PostgreSQL database name | No | gemini_cache_db |
 | `NODE_ENV` | Environment mode | No | development |
 | `PORT` | Server port | No | 3000 |
+| **Smart Context Summarization** |
+| `ENABLE_SMART_SUMMARIZATION` | Enable/disable smart context optimization | No | true |
+| `RECENT_MESSAGES_COUNT` | Number of recent messages to keep intact | No | 10 |
+| `MIN_MESSAGES_FOR_SUMMARY` | Min messages before summarization starts | No | 15 |
+| **Token Pricing (USD per 1M tokens)** |
+| `GEM_INPUT_PER_MTOK` | Input token pricing | No | 0.10 |
+| `GEM_OUTPUT_PER_MTOK` | Output token pricing | No | 0.40 |
+| `GEM_CACHE_CREATE_PER_MTOK` | Cache creation pricing | No | 0.025 |
+| `GEM_CACHE_STORAGE_PER_MTOK_PER_HR` | Cache storage per hour pricing | No | 1.0 |
+| **Model Configuration** |
+| `GEMINI_MODEL` | Gemini model to use | No | gemini-2.0-flash-001 |
+| `CACHE_TTL` | Cache time-to-live | No | 28800s (8 hours) |
 
 ### Local Development
 

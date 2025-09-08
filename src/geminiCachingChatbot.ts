@@ -21,6 +21,16 @@ export class GeminiCachingChatbot {
 
     // Keep backward compatibility for existing code
     private CACHE_TTL = process.env.CACHE_TTL ?? '28800s'; // 8 hours in seconds
+    
+    // Smart Context Summarization Configuration
+    private CONTEXT_CONFIG = {
+        // Number of recent messages to keep intact (not summarized)
+        RECENT_MESSAGES_COUNT: Number(process.env.RECENT_MESSAGES_COUNT ?? 10),
+        // Minimum messages required before summarization kicks in
+        MIN_MESSAGES_FOR_SUMMARY: Number(process.env.MIN_MESSAGES_FOR_SUMMARY ?? 15),
+        // Enable/disable smart summarization
+        ENABLE_SMART_SUMMARIZATION: process.env.ENABLE_SMART_SUMMARIZATION !== 'false'
+    };
 
     constructor(apiKey: string, storageService?: SessionStorageService) {
         console.log('Initializing Gemini Caching Chatbot with API Key:', apiKey);
@@ -459,17 +469,14 @@ export class GeminiCachingChatbot {
             // Always rebuild Gemini chat object from Redis message history
             const previousMessages = await this.sessionStorage.getSessionMessages(sessionId);
             
-            // Convert stored messages to Gemini history format
-            const history = previousMessages?.map(msg => ({
-                role: msg.role === 'user' ? 'user' : 'model',
-                parts: [{ text: msg.content }]
-            })) || [];
-
+            // Smart Context Summarization: optimize history for token efficiency
+            const optimizedHistory = await this.optimizeConversationHistory(previousMessages || []);
+                        
             // Auto-detect if this is a list request and increase token limit
             const isListRequest = /\b(recent|all|list|latest|blog posts?|case studies|portfolio|testimonials|awards|careers?|openings?)\b/i.test(message);
             const outputTokenLimit = maxTokens || (isListRequest ? 1000 : 500);
 
-            // Create fresh chat object with full conversation context
+            // Create fresh chat object with optimized conversation context
             const geminiChat = this.ai.chats.create({
                 model: this.modelName,
                 config: {
@@ -480,10 +487,10 @@ export class GeminiCachingChatbot {
                     maxOutputTokens: outputTokenLimit,
                     thinkingConfig: { thinkingBudget: 0 }
                 },
-                history: history // ✅ Full context from Redis message history
+                history: optimizedHistory // ✅ Optimized context with summary + recent messages
             });
 
-            console.log(`🔄 Built chat object with ${history.length} previous messages for session ${sessionId}`);
+            console.log(`🔄 Built chat object with ${optimizedHistory.length} optimized messages for session ${sessionId}`);
 
             let response: any;
             let responseText = '';
@@ -544,7 +551,7 @@ export class GeminiCachingChatbot {
                 messageIndex: session.messageCount
             });
 
-            // Track tokens using the service
+            // Track tokens using the service with summarization info
             const usageData = response.usageMetadata || {};
             const promptTokens = usageData.promptTokenCount || this.estimateTokens(message);
             const responseTokens = usageData.candidatesTokenCount || this.estimateTokens(responseText);
@@ -560,7 +567,12 @@ export class GeminiCachingChatbot {
                 estimated: !response.usageMetadata
             };
 
-            this.tokenAccounting.updateTokenStats(message, tokenUsage, useStreaming ? 'stream' : 'chat', sessionId);
+            // Add summarization metadata to the question for tracking
+            const questionWithMeta = this.CONTEXT_CONFIG.ENABLE_SMART_SUMMARIZATION && (previousMessages?.length || 0) > this.CONTEXT_CONFIG.MIN_MESSAGES_FOR_SUMMARY
+                ? `${message} [Smart-Context: ${optimizedHistory.length} msgs]`
+                : message;
+
+            this.tokenAccounting.updateTokenStats(questionWithMeta, tokenUsage, useStreaming ? 'stream' : 'chat', sessionId);
 
             console.log(`💬 Session ${sessionId}: Continued conversation (${session.messageCount} total messages)`);
 
@@ -652,6 +664,125 @@ export class GeminiCachingChatbot {
 
     estimateTokens(text: string) {
         return Math.ceil(text.length / 4);
+    }
+
+    /**
+     * Smart Context Summarization: Optimizes conversation history for token efficiency
+     * - Summarizes older messages to preserve context
+     * - Keeps recent N messages intact for immediate context
+     * - Maintains conversation flow while reducing token usage
+     */
+    private async optimizeConversationHistory(messages: any[]): Promise<any[]> {
+        // If smart summarization is disabled, return all messages
+        if (!this.CONTEXT_CONFIG.ENABLE_SMART_SUMMARIZATION) {
+            return messages.map(msg => ({
+                role: msg.role === 'user' ? 'user' : 'model',
+                parts: [{ text: msg.content }]
+            }));
+        }
+
+        // If we have fewer messages than the minimum threshold, return all messages
+        if (messages.length <= this.CONTEXT_CONFIG.MIN_MESSAGES_FOR_SUMMARY) {
+            return messages.map(msg => ({
+                role: msg.role === 'user' ? 'user' : 'model',
+                parts: [{ text: msg.content }]
+            }));
+        }
+
+        // Split messages into old (to summarize) and recent (to keep)
+        const recentCount = Math.min(this.CONTEXT_CONFIG.RECENT_MESSAGES_COUNT, messages.length - 2); // Keep at least 2 for summary
+        const oldMessages = messages.slice(0, -recentCount);
+        const recentMessages = messages.slice(-recentCount);
+
+        // Generate summary of older messages
+        const summary = await this.generateConversationSummary(oldMessages);
+        console.log("🚀 ~ GeminiCachingChatbot ~ optimizeConversationHistory ~ summary:", summary)
+        
+        // Build optimized history: summary + recent messages
+        const optimizedHistory = [];
+        
+        // Add summary as a model message if we have old messages to summarize
+        if (oldMessages.length > 0 && summary) {
+            optimizedHistory.push({
+                role: 'model',
+                parts: [{ text: `[Context Summary] Previous conversation: ${summary}` }]
+            });
+        }
+
+        // Add recent messages in their original format
+        recentMessages.forEach(msg => {
+            optimizedHistory.push({
+                role: msg.role === 'user' ? 'user' : 'model',
+                parts: [{ text: msg.content }]
+            });
+        });
+
+        const originalTokens = this.estimateTokens(messages.map(m => m.content).join(' '));
+        const optimizedTokens = this.estimateTokens(optimizedHistory.map(h => h.parts[0].text).join(' '));
+        const tokenSavings = originalTokens - optimizedTokens;
+        const savingsPercent = originalTokens > 0 ? ((tokenSavings / originalTokens) * 100).toFixed(1) : '0';
+
+        console.log(`📊 Smart Context Optimization:`);
+        console.log(`   • Original: ${messages.length} messages (${originalTokens} tokens)`);
+        console.log(`   • Optimized: ${optimizedHistory.length} messages (${optimizedTokens} tokens)`);
+        console.log(`   • Summarized: ${oldMessages.length} messages → 1 summary`);
+        console.log(`   • Recent: ${recentMessages.length} messages kept intact`);
+        console.log(`   • Token savings: ${tokenSavings} tokens (${savingsPercent}%)`);
+        
+        return optimizedHistory;
+    }
+
+    /**
+     * Generates a concise summary of conversation messages
+     * - Extracts key topics, decisions, and context
+     * - Maintains important user preferences and information
+     * - Creates a coherent narrative for context preservation
+     */
+    private async generateConversationSummary(messages: any[]): Promise<string> {
+        if (messages.length === 0) return '';
+
+        try {
+            // Prepare conversation text for summarization
+            const conversationText = messages
+                .map(msg => `${msg.role}: ${msg.content}`)
+                .join('\n');
+
+            // Create a summarization prompt
+            const summaryPrompt = `Please create a concise summary of this conversation that preserves key context, user preferences, decisions made, and important information discussed. Focus on what would be most relevant for continuing the conversation:
+
+${conversationText}
+
+Summary:`;
+
+            // Use Gemini to generate the summary (without caching to avoid recursion)
+            const response = await this.ai.models.generateContent({
+                model: this.modelName,
+                contents: summaryPrompt,
+                config: {
+                    temperature: 0.3, // Lower temperature for consistent summaries
+                    topP: 0.8,
+                    topK: 40,
+                    maxOutputTokens: 300, // Limit summary length
+                    thinkingConfig: { thinkingBudget: 0 }
+                }
+            });
+
+            const summary = response.text?.trim() || '';
+            console.log(`📝 Generated conversation summary (${this.estimateTokens(conversationText)} → ${this.estimateTokens(summary)} tokens)`);
+            
+            return summary;
+        } catch (error) {
+            console.warn('⚠️ Failed to generate conversation summary, using fallback:', error);
+            
+            // Fallback: Create a simple summary from key messages
+            const keyMessages = messages
+                .filter((_, index) => index % 3 === 0) // Sample every 3rd message
+                .slice(0, 5) // Take max 5 key messages
+                .map(msg => `${msg.role}: ${msg.content.substring(0, 100)}...`)
+                .join(' | ');
+            
+            return `Previous conversation covered: ${keyMessages}`;
+        }
     }
 
     // Public getters for services
