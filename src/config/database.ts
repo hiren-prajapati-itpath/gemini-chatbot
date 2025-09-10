@@ -1,5 +1,6 @@
 import { Sequelize, Options } from 'sequelize';
 import { CacheModel } from '../models/CacheModel.js';
+import { SyncMetadataModel } from '../models/SyncMetadataModel.js';
 
 // Lazy initialization - create sequelize instance only when needed
 let sequelize: Sequelize | null = null;
@@ -25,7 +26,7 @@ const getDatabaseConfig = (): Options => {
         database: dbName,
         username: dbUser,
         password: dbPassword,
-        logging: process.env.NODE_ENV === 'development' ? console.log : false,
+        //logging: process.env.NODE_ENV === 'development' ? console.log : false,
         pool: {
             max: 5,
             min: 0,
@@ -79,9 +80,10 @@ export const initializeDatabase = async () => {
 
         // Initialize models
         CacheModel.initModel(db);
+        SyncMetadataModel.initModel(db);
 
         // Sync database (creates tables if they don't exist)
-        //await db.sync({ alter: true });
+        await db.sync({ alter: true });
         console.log('✅ Database synchronized');
 
         return db;

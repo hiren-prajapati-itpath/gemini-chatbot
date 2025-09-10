@@ -1,0 +1,7 @@
+[2025-09-10T06:41:25.750Z] DocumentSectionManager: Successfully read document: D:\IPS-Projects\it_service_chatbot\it-service-chatbot-api\IT-Path-Solutions–Profile.md
+[2025-09-10T06:41:25.752Z] EnhancedSync: === Starting enhanced careers sync ===
+[2025-09-10T06:41:25.828Z] EnhancedSync: Fetching careers from WordPress API (/job_opening)...
+[2025-09-10T06:41:25.828Z] EnhancedSync: Using differential sync for careers, fetching items after 2025-09-09T14:00:17.108Z
+[2025-09-10T06:41:25.956Z] EnhancedSync: Successfully fetched 0 careers items (incremental sync)
+[2025-09-10T06:41:25.957Z] EnhancedSync: No new careers items found since last sync
+[2025-09-10T06:41:25.959Z] EnhancedSync: === careers sync completed successfully: 0 new items processed in 207ms ===

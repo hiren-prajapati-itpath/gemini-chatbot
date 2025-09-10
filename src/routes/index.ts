@@ -6,6 +6,7 @@ import { createCacheRoutes } from './cacheRoutes.js';
 import { createAnalyticsRoutes } from './analyticsRoutes.js';
 import { createDatabaseRoutes } from './databaseRoutes.js';
 import { createHealthRoutes } from './healthRoutes.js';
+import universalSyncRoutes from './universalSyncRoutes.js';
 
 export const setupRoutes = (app: Express, chatBot: GeminiCachingChatbot) => {
     // Setup all route groups
@@ -14,5 +15,6 @@ export const setupRoutes = (app: Express, chatBot: GeminiCachingChatbot) => {
     app.use('/api', createCacheRoutes(chatBot));
     app.use('/api', createAnalyticsRoutes(chatBot));
     app.use('/api/db', createDatabaseRoutes());
+    app.use('/api/sync', universalSyncRoutes);
     app.use('/', createHealthRoutes());
 };
