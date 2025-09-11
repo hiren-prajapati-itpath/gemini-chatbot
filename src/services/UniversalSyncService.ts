@@ -1,6 +1,5 @@
 // src/services/EnhancedUniversalSyncService.ts
 import fs from 'fs';
-import axios, { AxiosResponse } from 'axios';
 import * as cron from 'node-cron';
 import { WordPressService } from './wordpressService.js';
 import DocumentSectionManager from './DocumentSectionManager.js';
@@ -9,7 +8,7 @@ import { syncConfig, documentTemplates } from '../config/syncConfig.js';
 import { APIResponse } from '../interfaces/interface.js';
 
 // Type definitions
-type ContentType = 'blogs' | 'solutions' | 'caseStudies' | 'portfolio' | 'careers' | 'testimonials';
+type ContentType = 'blogs' | 'solutions' | 'caseStudies' | 'portfolio' | 'careers';
 
 interface SyncResult {
     contentType: ContentType;
@@ -115,17 +114,6 @@ export class EnhancedUniversalSyncService {
             apiEndpoint: '/job_opening',
             templateKey: 'careers',
             subsectionHeader: '### **Current Openings**',
-            sortField: 'date',
-            sortOrder: 'desc',
-            itemsPerPage: 50
-        });
-
-        configs.set('testimonials', {
-            targetSectionHeader: '## **IT Path Solutions – Client Testimonials**',
-            wpPostType: 'testimonials',
-            apiEndpoint: '/testimonials',
-            templateKey: 'testimonials',
-            subsectionHeader: '### **Testimonials & Client Feedback**',
             sortField: 'date',
             sortOrder: 'desc',
             itemsPerPage: 50
@@ -579,7 +567,6 @@ export class EnhancedUniversalSyncService {
                 pushMatches(/^\*\*(.+?)\*\*\s+[–—-]/gim);
                 break;
             case 'caseStudies':
-            case 'testimonials':
                 // ### **Title**
                 pushMatches(/^###\s+\*\*(.+?)\*\*/gim);
                 break;
@@ -620,8 +607,6 @@ export class EnhancedUniversalSyncService {
                 return this.normalizeTitle(String(item?.project_name || item?.customFields?.projectName || '')) || undefined;
             case 'careers':
                 return this.normalizeTitle(String(item?.job_title || item?.customFields?.jobTitle || '')) || undefined;
-            case 'testimonials':
-                return this.normalizeTitle(String(item?.client_name || item?.customFields?.clientName || '')) || undefined;
             case 'caseStudies':
                 return this.normalizeTitle(String(item?.title?.rendered || item?.title || item?.project_name || '')) || undefined;
             default:
@@ -800,7 +785,7 @@ export class EnhancedUniversalSyncService {
 
         this.log('=== Starting Full Enhanced Universal Sync ===');
 
-        const contentTypes: ContentType[] = ['blogs', 'solutions', 'caseStudies', 'portfolio', 'careers', 'testimonials'];
+        const contentTypes: ContentType[] = ['blogs', 'solutions', 'caseStudies', 'portfolio', 'careers'];
 
         // Sort by priority if defined in sync config
         const sortedContentTypes = contentTypes.sort((a, b) => {

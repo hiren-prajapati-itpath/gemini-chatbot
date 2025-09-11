@@ -76,10 +76,6 @@ export const syncConfig: SyncConfig = {
         careers: {
             enabled: process.env.SYNC_CAREERS !== 'false',
             priority: 5
-        },
-        testimonials: {
-            enabled: process.env.SYNC_TESTIMONIALS !== 'false',
-            priority: 6
         }
     },
     reporting: {
@@ -222,24 +218,6 @@ ${description.replace(/<[^>]*>/g, '').substring(0, 300)}...`;
     ${requiredSkills || 'Details available on application'}`;
         }
     },
-    testimonials: {
-        sectionTitle: '## **IT Path Solutions – Client Testimonials**',
-        introduction: '*What our clients say about working with IT Path Solutions.*',
-        itemTemplate: (item: any) => {
-            const clientName = item.client_name || item.customFields?.clientName || 'Anonymous Client';
-            const company = item.company || item.customFields?.company || '';
-            const position = item.position || item.customFields?.position || '';
-            const testimonial = item.testimonial || item.customFields?.testimonial || item.content?.rendered || '';
-            const rating = item.rating || item.customFields?.rating || 5;
-            
-            return `### **${clientName}**
-*${position}${company ? `, ${company}` : ''}*
-
-"${testimonial.replace(/<[^>]*>/g, '').substring(0, 300)}..."
-
-**Rating:** ${'★'.repeat(rating)}${'☆'.repeat(5 - rating)}`;
-        }
-    }
 };
 
 export default syncConfig;

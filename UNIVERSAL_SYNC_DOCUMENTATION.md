@@ -48,12 +48,6 @@ The Universal Sync System is a comprehensive WordPress-to-Document synchronizati
 - Salary ranges and benefits
 - Urgency flags for priority positions
 
-#### 6. **Testimonials** (`/testimonials`)
-- Client feedback with ratings
-- Company and position information
-- Featured testimonials
-- Project type associations
-
 ## Installation & Setup
 
 ### 1. Environment Configuration
@@ -136,17 +130,6 @@ function register_custom_post_types() {
         'show_in_graphql' => true,
         'graphql_single_name' => 'jobOpening',
         'graphql_plural_name' => 'jobOpenings'
-    ]);
-    
-    // Testimonials
-    register_post_type('testimonials', [
-        'public' => true,
-        'show_in_rest' => true,
-        'rest_base' => 'testimonials',
-        'supports' => ['title', 'editor', 'custom-fields'],
-        'show_in_graphql' => true,
-        'graphql_single_name' => 'testimonial',
-        'graphql_plural_name' => 'testimonials'
     ]);
 }
 add_action('init', 'register_custom_post_types');
@@ -319,11 +302,6 @@ GET /api/sync/case-studies/industry/:industry
 ```http
 GET /api/sync/careers/active
 GET /api/sync/careers/urgent
-```
-
-#### Testimonials
-```http
-GET /api/sync/testimonials/featured
 ```
 
 ### System Operations

@@ -6,7 +6,7 @@ const router = Router();
 const universalSyncService = new UniversalSyncService();
 
 // Type for content types
-type ContentType = 'blogs' | 'solutions' | 'caseStudies' | 'portfolio' | 'careers' | 'testimonials';
+type ContentType = 'blogs' | 'solutions' | 'caseStudies' | 'portfolio' | 'careers';
 
 /**
  * GET /api/enhanced-sync/status
@@ -39,7 +39,7 @@ router.get('/status/:contentType', async (req: Request, res: Response) => {
         const contentType = req.params.contentType as ContentType;
         
         // Validate content type
-        const validContentTypes: ContentType[] = ['blogs', 'solutions', 'caseStudies', 'portfolio', 'careers', 'testimonials'];
+        const validContentTypes: ContentType[] = ['blogs', 'solutions', 'caseStudies', 'portfolio', 'careers'];
         if (!validContentTypes.includes(contentType)) {
             return res.status(400).json({
                 success: false,
@@ -79,7 +79,7 @@ router.post('/manual', async (req: Request, res: Response) => {
 
         // Validate content types if provided
         if (contentTypes && Array.isArray(contentTypes)) {
-            const validContentTypes: ContentType[] = ['blogs', 'solutions', 'caseStudies', 'portfolio', 'careers', 'testimonials'];
+            const validContentTypes: ContentType[] = ['blogs', 'solutions', 'caseStudies', 'portfolio', 'careers',];
             const invalidTypes = contentTypes.filter(type => !validContentTypes.includes(type));
             
             if (invalidTypes.length > 0) {
@@ -159,40 +159,6 @@ router.post('/full', async (req: Request, res: Response) => {
         });
     }
 });
-
-/**
- * POST /api/enhanced-sync/force-resync/:contentType
- * Force full resync for a specific content type
- */
-router.post('/force-resync/:contentType', async (req: Request, res: Response) => {
-    try {
-        const contentType = req.params.contentType as ContentType;
-        
-        // Validate content type
-        const validContentTypes: ContentType[] = ['blogs', 'solutions', 'caseStudies', 'portfolio', 'careers', 'testimonials'];
-        if (!validContentTypes.includes(contentType)) {
-            return res.status(400).json({
-                success: false,
-                error: 'Invalid content type',
-                validTypes: validContentTypes
-            });
-        }
-
-        const result = await universalSyncService.forceFullResync(contentType);
-
-        res.json({
-            success: true,
-            data: result,
-            message: result.success ? `Force resync completed successfully for ${contentType}` : `Force resync failed for ${contentType}`
-        });
-    } catch (error: any) {
-        res.status(500).json({
-            success: false,
-            error: error.message,
-            message: `Force resync failed for ${req.params.contentType}`
-        });
-    }
-});
     
 /**
  * GET /api/enhanced-sync/validate
@@ -235,7 +201,7 @@ router.get('/logs', async (req: Request, res: Response) => {
         };
 
         if (contentType) {
-            const validContentTypes: ContentType[] = ['blogs', 'solutions', 'caseStudies', 'portfolio', 'careers', 'testimonials'];
+            const validContentTypes: ContentType[] = ['blogs', 'solutions', 'caseStudies', 'portfolio', 'careers'];
             if (!validContentTypes.includes(contentType as ContentType)) {
                 return res.status(400).json({
                     success: false,

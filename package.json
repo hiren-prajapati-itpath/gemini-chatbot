@@ -10,10 +10,6 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "npm run build && node dist/index.js",
-    "blog": "node --import tsx blog.ts",
-    "blog:rest": "node --import tsx blog.ts",
-    "blog:graphql": "cross-env API_TYPE=graphql node --import tsx blog.ts",
-    "blog:json": "cross-env OUTPUT_FORMAT=json node --import tsx blog.ts",
     "vercel-build": "npm run build",
     "render-build": "npm run build"
   },

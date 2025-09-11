@@ -1,9 +1,10 @@
+import { WordPressService } from './wordpressService.js';
 // src/services/DocumentSectionManager.ts
 import fs from 'fs'; 
 import { syncConfig } from '../config/syncConfig.js';
 
 // Type definitions
-type ContentType = 'blogs' | 'solutions' | 'caseStudies' | 'portfolio' | 'careers' | 'testimonials';
+type ContentType = 'blogs' | 'solutions' | 'caseStudies' | 'portfolio' | 'careers';
 
 interface DocumentSection {
     startMarker: string;
@@ -65,18 +66,12 @@ const DOCUMENT_SECTIONS: Record<ContentType, DocumentSection> = {
             current: '### **Current Openings**'
         }
     },
-    testimonials: {
-        startMarker: '## **IT Path Solutions – Client Testimonials**',
-        endMarker: '## **IT Path Solutions –',
-        subsections: {
-            testimonials: '### **Testimonials & Client Feedback**'
-        }
-    }
 };
 
 export class DocumentSectionManager {
     private documentPath: string;
     private logFile: string;
+    private wordpressService: WordPressService = new WordPressService();
 
     constructor() {
         this.documentPath = syncConfig.sync.documentPath;
@@ -345,31 +340,16 @@ ${olderContent}
     private generateBlogContent(posts: any[]): string {
         let content = '';
 
-        posts.forEach(post => {
+        posts.forEach(async post => {
             const date = new Date(post.date).toLocaleDateString('en-US', {
                 year: 'numeric',
                 month: 'long',
                 day: 'numeric'
             });
-            
-            // Enhanced author name extraction with better fallback logic
-            let authorName = post.author?.name || 
-                           post._embedded?.author?.[0]?.name || 
-                           post.author_name;
-            
-            // If no author name found but we have an author ID, use fallback
-            if (!authorName && (post.author || post.author_id)) {
-                const authorId = post.author || post.author_id;
-                
-                // For now, use a descriptive fallback that indicates the author ID
-                authorName = typeof authorId === 'number' ? `Author ID: ${authorId}` : 'IT Path Solutions';
-            }
-            
-            // Final fallback
-            if (!authorName) {
-                authorName = 'IT Path Solutions';
-            }
-            
+
+            const authorId = post.author;
+            let authorName = await this.wordpressService.fetchAuthor(authorId);
+
             // Clean and format the title
             const title = (post.title?.rendered || post.title || '').replace(/&#038;/g, '&');
             

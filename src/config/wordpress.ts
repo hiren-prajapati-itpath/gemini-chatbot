@@ -15,7 +15,6 @@ export const customPostTypes = {
     caseStudies: 'case_studies',
     portfolio: 'portfolio',
     careers: 'job_opening',
-    testimonials: 'testimonials'
 };
 
 // Content type configurations for sync
@@ -49,12 +48,6 @@ export const contentTypeConfigs = {
         customPostType: true,
         documentSection: '## **Career Opportunities**',
         fields: ['job_title', 'department', 'experience_required', 'location', 'job_type', 'description', 'responsibilities', 'requirements', 'skills', 'salary_range', 'openings']
-    },
-    testimonials: {
-        endpoint: '/testimonials',
-        customPostType: true,
-        documentSection: '## **Client Testimonials**',
-        fields: ['client_name', 'company', 'position', 'testimonial', 'rating', 'project_type', 'location', 'featured', 'status']
     }
 };
 
@@ -163,27 +156,5 @@ export const graphqlQueries = {
      }
     }
   }
-}`,
-    testimonials: `
-        query Testimonials {
-            testimonials {
-                nodes {
-                    id
-                    title
-                    content
-                    customFields {
-                        clientName
-                        company
-                        position
-                        testimonial
-                        rating
-                        projectType
-                        location
-                        featured
-                        status
-                    }
-                }
-            }
-        }
-    `
+}`
 };

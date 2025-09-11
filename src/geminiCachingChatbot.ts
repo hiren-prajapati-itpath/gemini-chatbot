@@ -2,6 +2,7 @@ import { GoogleGenAI, createUserContent, createPartFromUri, createPartFromText }
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { CacheService } from './services/CacheService.js';
+import { EnhancedCacheService } from './services/EnhancedCacheService.js';
 import { initializeDatabase } from './config/database.js';
 import { Response } from 'express';
 import { SessionStorageService } from './services/storage/SessionStorageService.js';
@@ -15,13 +16,14 @@ export class GeminiCachingChatbot {
     private cache: any = null;
     private chatHistory: Array<any> = [];
     private cacheService!: CacheService;
+    private enhancedCacheService!: EnhancedCacheService;
     private sessionStorage!: SessionStorageService;
     private tokenAccounting: TokenAccountingService;
     private modelName = process.env.GEMINI_MODEL ?? 'gemini-2.0-flash-001';
 
     // Keep backward compatibility for existing code
     private CACHE_TTL = process.env.CACHE_TTL ?? '28800s'; // 8 hours in seconds
-    
+
     // Smart Context Summarization Configuration
     private CONTEXT_CONFIG = {
         // Number of recent messages to keep intact (not summarized)
@@ -45,8 +47,9 @@ export class GeminiCachingChatbot {
             const db = await initializeDatabase();
             if (db) {
                 this.cacheService = new CacheService();
+                this.enhancedCacheService = new EnhancedCacheService();
                 await this.loadActiveCache();
-                console.log('✅ Cache service initialized');
+                console.log('✅ Enhanced cache service initialized');
             } else {
                 console.log('⚠️  Cache service disabled - running without database persistence');
             }
@@ -72,25 +75,53 @@ export class GeminiCachingChatbot {
 
     private async loadActiveCache() {
         try {
-            if (!this.cacheService) {
-                console.log('📝 Cache service not available, skipping cache restoration');
+            if (!this.enhancedCacheService) {
+                console.log('📝 Enhanced cache service not available, skipping cache restoration');
                 return;
             }
 
-            const activeCache = await this.cacheService.getActiveCache();
+            // Use enhanced cache service with document validation
+            const activeCache = await this.enhancedCacheService.getActiveCache();
             if (activeCache) {
+                // Check if the cache is expired
+                if (activeCache.expireTime && new Date() >= activeCache.expireTime) {
+                    console.log(`⏰ Active cache ${activeCache.name} is expired, will recreate`);
+                    if (activeCache.fileUri) {
+                        await this.recreateCacheFromRecord(activeCache);
+                    }
+                    return;
+                }
+
                 // Try to find the cache in Gemini API
                 const geminiCache = await this.findCacheByName(activeCache.name);
                 if (geminiCache) {
+                    // Double-check if the found cache is not expired
+                    if (geminiCache.expireTime && new Date() >= new Date(geminiCache.expireTime)) {
+                        console.log(`⏰ Found cache ${activeCache.name} is expired, will recreate`);
+                        if (activeCache.fileUri) {
+                            await this.recreateCacheFromRecord(activeCache);
+                        }
+                        return;
+                    }
+
                     this.cache = geminiCache;
                     // Initialize token accounting with cache tokens
                     const cacheTokens = activeCache.cachedTokens;
                     this.tokenAccounting = new TokenAccountingService(cacheTokens);
-                    console.log(`🔄 Restored cache: ${activeCache.name}`);
+                    console.log(`🔄 Restored validated cache: ${activeCache.name}`);
                 } else if (activeCache.fileUri) {
                     // Cache expired/deleted, recreate from file
-                    console.log(`♻️ Recreating expired cache from file...`);
+                    console.log(`♻️ Cache expired/deleted on Google servers, recreating from file...`);
                     await this.recreateCacheFromRecord(activeCache);
+                }
+            } else {
+                // Check if we should recreate cache
+                const recreateInfo = await this.enhancedCacheService.shouldRecreateCache();
+                if (recreateInfo.shouldRecreate) {
+                    console.log(`🔄 ${recreateInfo.reason}. Cache will be recreated lazily on next request.`);
+                    if (recreateInfo.hasDocumentChanged) {
+                        console.log(`📄 Document changes detected - cache invalidated`);
+                    }
                 }
             }
         } catch (error) {
@@ -125,16 +156,18 @@ export class GeminiCachingChatbot {
             const cacheTokens = this.cache.usageMetadata?.totalTokenCount || 0;
             this.tokenAccounting = new TokenAccountingService(cacheTokens);
 
-            // Update DB record
-            await this.cacheService.updateCache(record.id, {
+            // Update DB record with new cache details
+            await this.enhancedCacheService.updateCache(record.id, {
                 name: this.cache.name,
                 expireTime: this.cache.expireTime ? new Date(this.cache.expireTime) : undefined,
-                cachedTokens: cacheTokens
+                cachedTokens: cacheTokens,
+                isActive: true
             });
 
             console.log(`✅ Cache recreated: ${this.cache.name}`);
         } catch (error) {
             console.error('Failed to recreate cache:', error);
+            throw error;
         }
     }
 
@@ -171,8 +204,8 @@ export class GeminiCachingChatbot {
         const cacheTokens = this.cache.usageMetadata?.totalTokenCount || 0;
         this.tokenAccounting = new TokenAccountingService(cacheTokens);
 
-        // Save to database
-        await this.cacheService.saveCache({
+        // Save to database with enhanced tracking
+        await this.enhancedCacheService.saveCache({
             name: this.cache.name,
             model: this.modelName,
             fileUri: doc.uri,
@@ -183,11 +216,17 @@ export class GeminiCachingChatbot {
             uploadedFileName: doc.name
         });
 
-        // Log cache creation and storage cost
+        // Log cache creation and storage cost with TTL details
         const costBreakdown = this.tokenAccounting.getCostBreakdown();
+        const currentTime = new Date();
+        const expireTime = this.cache.expireTime ? new Date(this.cache.expireTime) : null;
+        const hoursToExpiry = expireTime ? Math.round((expireTime.getTime() - currentTime.getTime()) / (1000 * 60 * 60) * 100) / 100 : 0;
+        
         console.log('[Cache Created]');
         console.log(`- Name: ${this.cache.name}`);
         console.log(`- Cached tokens: ${cacheTokens}`);
+        console.log(`- TTL Setting: ${this.CACHE_TTL}`);
+        console.log(`- Hours until expiry: ${hoursToExpiry}h`);
         console.log(`- One-time create cost: $${costBreakdown.cacheCreationCost.oneTimeCostUSD}`);
         console.log(`- Storage per hour: $${costBreakdown.cachingStorageCost.costPerHourUSD}`);
         if (this.cache.expireTime) console.log(`- Expires: ${this.cache.expireTime}`);
@@ -198,108 +237,6 @@ export class GeminiCachingChatbot {
             cachedTokens: cacheTokens,
             expiresAt: this.cache.expireTime,
             message: 'Company profile has been cached successfully using explicit caching.'
-        };
-    }
-
-    async askQuestion(
-        userQuestion: string,
-        useStreaming = false,
-        maxTokens?: number,
-        res?: Response
-    ) {
-        // Auto-initialize cache if not available
-        if (!this.cache) {
-            await this.loadActiveCache();
-            if (!this.cache) {
-                throw new Error('No cache available. Please create a company cache first.');
-            }
-        }
-        console.log("Using cache:", this.cache.name);
-
-        // Auto-detect if this is a list request and increase token limit
-        const isListRequest = /\b(recent|all|list|latest|blog posts?|case studies|portfolio|testimonials|awards|careers?|openings?)\b/i.test(userQuestion);
-        const outputTokenLimit = maxTokens || (isListRequest ? 1000 : 500);
-
-        const generateConfig = {
-            model: this.modelName,
-            contents: userQuestion,
-            config: {
-                cachedContent: this.cache.name,
-                temperature: 0.7,
-                topP: 0.8,
-                topK: 40,
-                maxOutputTokens: outputTokenLimit,
-                thinkingConfig: { thinkingBudget: 0 }
-            }
-        };
-
-        let response: any;
-        let fullResponse = '';
-
-        if (useStreaming) {
-            if (!res) {
-                throw new Error('Response object is required for streaming');
-            }
-
-            const stream = await this.ai.models.generateContentStream(generateConfig);
-            for await (const chunk of stream) {
-                const chunkText = chunk.text || '';
-                if (chunkText) {
-                    fullResponse += chunkText;
-                    res.write(`data: ${JSON.stringify({ chunk: chunkText })}\n\n`);
-                    console.log("[stream-chunk]", chunkText.substring(0, 100) + "...");
-                }
-            }
-
-            res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
-            res.end();
-
-            response = {
-                text: fullResponse
-            };
-        } else {
-            response = await this.ai.models.generateContent(generateConfig);
-            fullResponse = response.text;
-        }
-
-        this.chatHistory.push({ role: 'user', content: userQuestion, timestamp: new Date() });
-        this.chatHistory.push({ role: 'assistant', content: fullResponse, timestamp: new Date() });
-
-        const usageData = response.usageMetadata || {};
-        const promptTokens = usageData.promptTokenCount || this.estimateTokens(userQuestion);
-        const responseTokens = usageData.candidatesTokenCount || this.estimateTokens(fullResponse);
-        const cachedTokens = usageData.cachedContentTokenCount || 0;
-        const billedInputTokens = Math.max(0, (usageData.promptTokenCount ?? promptTokens) - (usageData.cachedContentTokenCount ?? 0));
-        const isEstimated = !response.usageMetadata; // stream mode
-
-        // Update token accounting using the service
-        const tokenUsage: TokenUsage = {
-            promptTokens,
-            responseTokens,
-            cachedTokens,
-            billedInputTokens,
-            totalTokens: promptTokens + responseTokens,
-            estimated: isEstimated
-        };
-
-        this.tokenAccounting.updateTokenStats(
-            userQuestion,
-            tokenUsage,
-            useStreaming ? 'stream' : 'standard'
-        );
-
-        return {
-            response: fullResponse,
-            tokenUsage: {
-                promptTokens,
-                responseTokens,
-                cachedTokens,
-                billedInputTokens,
-                totalTokens: promptTokens + responseTokens,
-                estimated: isEstimated
-            },
-            cacheHit: cachedTokens > 0,
-            usageMetadata: usageData
         };
     }
 
@@ -314,7 +251,8 @@ export class GeminiCachingChatbot {
         maxTokens?: number,
         res?: Response
     ) {
-        if (!this.cache) throw new Error('No cache available. Please create a company cache first.');
+        // ✅ Use common cache availability logic
+        await this.ensureCacheAvailable('startChat');
 
         const finalSessionId = sessionId || this.generateSessionId();
 
@@ -464,6 +402,9 @@ export class GeminiCachingChatbot {
         if (!session) {
             throw new Error(`Session ${sessionId} not found. Please start a new chat session.`);
         }
+
+        // ✅ Use common cache availability logic
+        await this.ensureCacheAvailable('continueChat');
 
         try {
             // Always rebuild Gemini chat object from Redis message history
@@ -788,5 +729,100 @@ Summary:`;
     // Public getters for services
     getTokenAccounting(): TokenAccountingService {
         return this.tokenAccounting;
+    }
+
+    // Enhanced ensureCacheAvailable method - checks document changes FIRST, then other validations
+    private async ensureCacheAvailable(methodName: string): Promise<void> {
+        // CRITICAL FIX: Always check document changes first, even if we have a cache reference
+        if (this.cache && this.enhancedCacheService) {
+            const recreateInfo = await this.enhancedCacheService.shouldRecreateCache();
+            if (recreateInfo.hasDocumentChanged) {
+                console.log(`📄 Document changed detected, clearing cache reference and forcing recreation`);
+                this.cache = null;
+                
+                // Immediately recreate cache for document changes
+                console.log(`🔄 Cache recreation triggered for ${methodName}: document_changed`);
+                const profilePath = path.join(process.cwd(), 'IT-Path-Solutions–Profile.md');
+                try {
+                    await this.createCompanyCache(profilePath, 'text/markdown');
+                    console.log(`✅ Cache recreated successfully for ${methodName}: document_changed`);
+                    return; // Exit early after successful recreation
+                } catch (error) {
+                    console.error('❌ Failed to recreate cache after document change:', error);
+                    throw new Error('Failed to recreate cache after document change.');
+                }
+            }
+        }
+
+        // Check if we have a cache and if it's still valid
+        if (this.cache) {
+            const currentTime = new Date();
+            const expireTime = this.cache.expireTime ? new Date(this.cache.expireTime) : null;
+            
+            // Check if cache is expired
+            if (expireTime && currentTime >= expireTime) {
+                const timeToExpiry = expireTime.getTime() - currentTime.getTime();
+                const hoursToExpiry = Math.round(timeToExpiry / (1000 * 60 * 60) * 100) / 100;
+                console.log(`⏰ Current cache expired at ${this.cache.expireTime} (${hoursToExpiry} hours ago), clearing reference`);
+                this.cache = null;
+            } else if (expireTime) {
+                const timeToExpiry = expireTime.getTime() - currentTime.getTime();
+                const hoursToExpiry = Math.round(timeToExpiry / (1000 * 60 * 60) * 100) / 100;
+                console.log(`✅ Cache still valid, expires in ${hoursToExpiry} hours at ${this.cache.expireTime}`);
+                
+                // Verify cache still exists on Google's servers
+                try {
+                    const existingCache = await this.findCacheByName(this.cache.name);
+                    if (!existingCache) {
+                        console.log(`♻️ Cache ${this.cache.name} no longer exists on Google servers (deleted externally), clearing reference`);
+                        this.cache = null;
+                    } else {
+                        console.log(`✅ Cache ${this.cache.name} confirmed to exist on Google servers`);
+                    }
+                } catch (error) {
+                    console.log(`❌ Error checking cache existence, clearing reference: ${error}`);
+                    this.cache = null;
+                }
+            } else {
+                // Verify cache still exists on Google's servers
+                try {
+                    const existingCache = await this.findCacheByName(this.cache.name);
+                    if (!existingCache) {
+                        console.log(`♻️ Cache ${this.cache.name} no longer exists on Google servers, clearing reference`);
+                        this.cache = null;
+                    }
+                } catch (error) {
+                    console.log(`❌ Error checking cache existence, clearing reference: ${error}`);
+                    this.cache = null;
+                }
+            }
+        }
+
+        // If no valid cache, try to load or recreate
+        if (!this.cache) {
+            await this.loadActiveCache();
+            if (!this.cache) {
+                // Check if we should recreate cache
+                if (this.enhancedCacheService) {
+                    const recreateInfo = await this.enhancedCacheService.shouldRecreateCache();
+
+                    if (recreateInfo.shouldRecreate) {
+                        console.log(`🔄 Cache recreation triggered for ${methodName}: ${recreateInfo.reason}`);
+                        const profilePath = path.join(process.cwd(), 'IT-Path-Solutions–Profile.md');
+                        try {
+                            await this.createCompanyCache(profilePath, 'text/markdown');
+                            console.log(`✅ Cache recreated successfully for ${methodName}`);
+                        } catch (error) {
+                            console.error('❌ Failed to recreate cache:', error);
+                            throw new Error('Failed to recreate cache. Please create a company cache manually.');
+                        }
+                    }
+                }
+
+                if (!this.cache) {
+                    throw new Error('No cache available. Please create a company cache first.');
+                }
+            }
+        }
     }
 }
