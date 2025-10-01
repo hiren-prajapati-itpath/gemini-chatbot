@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import { GeminiCachingChatbot } from './geminiCachingChatbot.js';
 import { initializeDatabase, closeDatabase } from './config/database.js';
 import { setupRoutes } from './routes/index.js';
+import UniversalSyncService from './services/UniversalSyncService.js';
 import 'reflect-metadata';
 
 dotenv.config();
@@ -19,6 +20,7 @@ if (!GEMINI_API_KEY) {
 }
 
 const chatBot = new GeminiCachingChatbot(GEMINI_API_KEY);
+const universalSyncService = new UniversalSyncService();
 
 // Setup all routes
 setupRoutes(app, chatBot);
@@ -44,6 +46,9 @@ const startServer = async () => {
         // Initialize database first
         await initializeDatabase();
         
+        // Start the universal sync cron job
+        universalSyncService.startEnhancedCronJob();
+        
         // Start the server
         app.listen(PORT, "0.0.0.0", () => {
             console.log('🚀 Gemini Context Caching Chatbot Server');
@@ -51,6 +56,7 @@ const startServer = async () => {
             console.log('🤖 Using Gemini 2.5 Flash with explicit caching');
             console.log('📚 Documentation: https://ai.google.dev/gemini-api/docs/caching');
             console.log('🗂️  Routes organized in separate modules');
+            console.log('⏰ Universal sync cron job started (weekly schedule)');
         });
     } catch (error) {
         console.error('❌ Failed to start server:', error);

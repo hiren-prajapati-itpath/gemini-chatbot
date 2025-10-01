@@ -12,7 +12,7 @@ export const wpConfig = {
 // Custom post types for WordPress (you'll need to register these in WordPress)
 export const customPostTypes = {
     solutions: 'solutions',
-    caseStudies: 'case_studies',
+    caseStudies: 'casestudies',
     portfolio: 'portfolio',
     careers: 'job_opening',
 };
@@ -32,7 +32,7 @@ export const contentTypeConfigs = {
         fields: ['title', 'description', 'category', 'features', 'technologies', 'url', 'image', 'status']
     },
     caseStudies: {
-        endpoint: '/case_studies',
+        endpoint: '/casestudies',
         customPostType: true,
         documentSection: '## **Case Studies**',
         fields: ['title', 'client_name', 'industry', 'description', 'challenge', 'solution', 'results', 'technologies', 'project_duration', 'team_size']

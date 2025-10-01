@@ -878,7 +878,7 @@ export class EnhancedUniversalSyncService {
             return;
         }
 
-        this.log(`Starting enhanced universal sync cron job with schedule: ${syncConfig.sync.interval}`);
+        this.log(`Starting enhanced case studies sync cron job with schedule: ${syncConfig.sync.interval}`);
 
         cron.schedule(syncConfig.sync.interval, async () => {
             try {

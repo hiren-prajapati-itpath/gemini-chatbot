@@ -43,3 +43,5 @@
 [2025-09-10T09:44:12.198Z] EnhancedSync: No new careers items found since last sync
 [2025-09-10T09:44:12.212Z] EnhancedSync: === careers sync completed successfully: 0 new items processed in 236ms ===
 [2025-09-10T09:44:12.215Z] EnhancedSync: === Full Enhanced Universal Sync Complete: 0 total fetched, 0 new, 0 updated, 0 errors ===
+[2025-10-01T07:24:41.714Z] EnhancedSync: Starting enhanced universal sync cron job with schedule: 0 0 * * 0
+[2025-10-01T07:24:41.846Z] EnhancedSync: Enhanced universal sync cron job started successfully

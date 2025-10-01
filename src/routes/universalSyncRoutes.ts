@@ -235,7 +235,7 @@ router.get('/logs', async (req: Request, res: Response) => {
 
 /**
  * POST /api/enhanced-sync/cron/start
- * Start the enhanced cron job
+ * Manually start/restart the enhanced cron job (runs weekly case studies sync automatically on server startup)
  */
 router.post('/cron/start', async (req: Request, res: Response) => {
     try {

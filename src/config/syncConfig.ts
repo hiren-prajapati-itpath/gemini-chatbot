@@ -48,7 +48,7 @@ export const syncConfig: SyncConfig = {
     },
     sync: {
         enableAutoSync: process.env.ENABLE_AUTO_SYNC === 'true',
-        interval: process.env.SYNC_INTERVAL || '0 */6 * * *', // Every 6 hours
+        interval: process.env.SYNC_INTERVAL || '0 0 * * 0', // Every Sunday at midnight (weekly)
         documentPath: path.join(process.cwd(), process.env.DOCUMENT_PATH || './IT-Path-Solutions-Blogs.md'),
         backupDirectory: process.env.BACKUP_DIRECTORY || './backups',
         logFile: process.env.SYNC_LOG_FILE || './universal-sync.log',
@@ -159,16 +159,23 @@ ${link ? `   (${link})` : ''}`;
         sectionTitle: '## **IT Path Solutions – Case Studies**',
         introduction: '*Real-world projects showcasing our expertise and client success stories.*',
         itemTemplate: (item: any) => {
-            const title = (item.title?.rendered || item.title || '').replace(/&#038;/g, '&');
-            const clientName = item.client_name || item.customFields?.clientName || 'Confidential Client';
-            const industry = item.industry || item.customFields?.industry || 'Various';
-            const description = item.description || item.content?.rendered || item.excerpt?.rendered || '';
+            const title = (item.title?.rendered || item.title || '').replace(/&#038;/g, '&').replace(/&amp;/g, '&');
+            const description = item.excerpt?.rendered || item.content?.rendered || '';
+            const cleanDescription = description.replace(/<[^>]*>/g, '').trim();
+            
+            const link = item.link || '';
+            const date = new Date(item.date).toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+            });
             
             return `### **${title}**
-*Client: ${clientName}*
-*Industry: ${industry}*
+*Published: ${date}*
+${link ? `*Link: ${link}*` : ''}
 
-${description.replace(/<[^>]*>/g, '').substring(0, 300)}...`;
+${cleanDescription.substring(0, 300)}${cleanDescription.length > 300 ? '...' : ''}
+`;
         }
     },
     portfolio: {
